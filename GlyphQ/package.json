@@ -72,7 +72,20 @@
   "private": true,
   "jest": {
     "preset": "jest-expo",
-    "setupFiles": ["react-native-gesture-handler/jestSetup"],
-    "testPathIgnorePatterns": ["/node_modules/", "/e2e/"]
+    "setupFiles": [
+      "react-native-gesture-handler/jestSetup"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/e2e/"
+    ]
+  },
+  "overrides": {
+    "brace-expansion@1": "^1.1.21",
+    "postcss": "^8.5.23",
+    "ws@7": "^7.5.11",
+    "decode-uri-component": "^0.5.0",
+    "compression": "^1.8.2",
+    "source-map-js": "^1.2.2"
   }
 }

@@ -1,5 +1,6 @@
 # GlyphQ
 
+[![CI](https://github.com/kiwayu/GlyphQ/actions/workflows/ci.yml/badge.svg)](https://github.com/kiwayu/GlyphQ/actions/workflows/ci.yml)
 [![Expo](https://img.shields.io/badge/Expo-54.0.33-black?logo=expo)](https://expo.dev)
 [![React Native](https://img.shields.io/badge/React%20Native-0.81.5-61DAFB?logo=react)](https://reactnative.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)](https://www.typescriptlang.org)

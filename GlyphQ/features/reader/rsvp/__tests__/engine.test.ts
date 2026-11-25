@@ -124,6 +124,20 @@ describe("orpIndex", () => {
     expect(orpIndex("")).toBe(0);
     expect(orpIndex("—")).toBe(0);
   });
+
+  it("counts letters only, so punctuation never shifts the focus", () => {
+    // "hello" is 5 letters -> 2nd letter, with or without a trailing comma
+    expect(orpIndex("hello")).toBe(1);
+    expect(orpIndex("hello,")).toBe(1);
+    // "wonderful" is 9 letters -> 3rd letter; the comma and quote do not
+    // push it into the 10-13 band
+    expect("wonderful,”".charAt(orpIndex("wonderful,”"))).toBe("n");
+  });
+
+  it("keeps the old rule for a token that is only punctuation", () => {
+    expect(orpIndex("…")).toBe(0);
+    expect(orpIndex("?!")).toBe(1);
+  });
 });
 
 describe("splitOrp", () => {
@@ -145,12 +159,21 @@ describe("splitOrp", () => {
     expect(splitOrp("end.")).toEqual({ left: "e", focus: "n", right: "d." });
   });
 
+  it("focuses the same letter whatever quotes wrap the word", () => {
+    expect(splitOrp("“Hello,”")).toEqual({
+      left: "“H",
+      focus: "e",
+      right: "llo,”",
+    });
+    expect(splitOrp("(reading)").focus).toBe(splitOrp("reading").focus);
+  });
+
   it("returns three empty strings for empty input", () => {
     expect(splitOrp("")).toEqual({ left: "", focus: "", right: "" });
   });
 
   it("reassembles to the original word", () => {
-    for (const w of ["a", "to", "reading", "extraordinarily", "war—", "“wait!”"]) {
+    for (const w of ["a", "to", "reading", "extraordinarily", "war—", "“wait!”", "“Hello,”", "…"]) {
       const { left, focus, right } = splitOrp(w);
       expect(left + focus + right).toBe(w);
     }

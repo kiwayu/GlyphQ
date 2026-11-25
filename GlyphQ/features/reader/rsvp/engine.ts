@@ -117,13 +117,12 @@ export function tokenizeParagraphs(paragraphs: string[]): Token[] {
 
 /* ── ORP ────────────────────────────────────────────────────────── */
 
-/**
- * Index of the focal (ORP) letter. OpenSpritz rule by length:
- * 1 char -> 0, 2-5 -> 1, 6-9 -> 2, 10-13 -> 3, longer -> 4.
- * Clamped to the last character for safety on punctuation-only tokens.
- */
-export function orpIndex(word: string): number {
-  const len = word.length;
+/* Punctuation and quotes that can sit at either edge of a word. */
+const LEADING_MARKS = /^["'“”‘’«»„‚‹›()[\]{}.,;:!?…—–*_-]+/;
+const TRAILING_MARKS = /["'“”‘’«»„‚‹›()[\]{}.,;:!?…—–*_-]+$/;
+
+/** OpenSpritz rule by length: 1 -> 0, 2-5 -> 1, 6-9 -> 2, 10-13 -> 3, longer -> 4. */
+function orpForLength(len: number): number {
   if (len <= 1) return 0;
   let idx: number;
   if (len <= 5) idx = 1;
@@ -131,6 +130,19 @@ export function orpIndex(word: string): number {
   else if (len <= 13) idx = 3;
   else idx = 4;
   return Math.min(idx, len - 1);
+}
+
+/**
+ * Index of the focal (ORP) letter within the full word. Like the Spritz
+ * patent table, the length rule counts letters only: leading and trailing
+ * punctuation and quotes are set aside, so “Hello,” focuses on its "e".
+ * A punctuation-only token falls back to the rule on its full length.
+ */
+export function orpIndex(word: string): number {
+  const lead = word.match(LEADING_MARKS)?.[0].length ?? 0;
+  const core = word.slice(lead).replace(TRAILING_MARKS, "");
+  if (!core) return orpForLength(word.length);
+  return lead + orpForLength(core.length);
 }
 
 export interface OrpParts {

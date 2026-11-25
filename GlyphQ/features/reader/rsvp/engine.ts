@@ -27,6 +27,13 @@ export interface Token {
   paragraphIndex: number;
   /** True for the last word of a paragraph (longer pause). */
   isParagraphEnd: boolean;
+  /**
+   * Index, within its paragraph, of the whitespace-delimited word this token
+   * came from. Em-dash splits share one: "war—peace" gives two tokens with
+   * the same sourceWord. The page counts words by whitespace, so this is
+   * what maps an RSVP position back to the exact word on the page.
+   */
+  sourceWord: number;
 }
 
 export interface Schedule {
@@ -64,21 +71,29 @@ const EM_DASH = "—";
  * - quotes and other punctuation stay attached to their word
  */
 export function tokenize(text: string): string[] {
+  return splitWords(text).map((w) => w.word);
+}
+
+/** tokenize, keeping for each token the index of the word it came from. */
+function splitWords(text: string): { word: string; sourceWord: number }[] {
   if (!text) return [];
-  const out: string[] = [];
+  const out: { word: string; sourceWord: number }[] = [];
+  let sourceWord = 0;
   for (const raw of text.split(/\s+/)) {
     if (!raw) continue;
+    const push = (word: string) => out.push({ word, sourceWord });
     if (raw.includes(EM_DASH)) {
       // "a—b" -> "a—", "b"; standalone "—" survives as its own token
       const parts = raw.split(EM_DASH);
       for (let i = 0; i < parts.length - 1; i++) {
-        if (parts[i]) out.push(parts[i] + EM_DASH);
-        else if (i === 0) out.push(EM_DASH);
+        if (parts[i]) push(parts[i] + EM_DASH);
+        else if (i === 0) push(EM_DASH);
       }
-      if (parts[parts.length - 1]) out.push(parts[parts.length - 1]);
+      if (parts[parts.length - 1]) push(parts[parts.length - 1]);
     } else {
-      out.push(raw);
+      push(raw);
     }
+    sourceWord++;
   }
   return out;
 }
@@ -87,12 +102,13 @@ export function tokenize(text: string): string[] {
 export function tokenizeParagraphs(paragraphs: string[]): Token[] {
   const tokens: Token[] = [];
   paragraphs.forEach((text, paragraphIndex) => {
-    const words = tokenize(text);
-    words.forEach((word, i) => {
+    const words = splitWords(text);
+    words.forEach(({ word, sourceWord }, i) => {
       tokens.push({
         word,
         paragraphIndex,
         isParagraphEnd: i === words.length - 1,
+        sourceWord,
       });
     });
   });

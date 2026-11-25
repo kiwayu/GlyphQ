@@ -16,6 +16,7 @@ const tok = (word: string, isParagraphEnd = false, paragraphIndex = 0): Token =>
   word,
   paragraphIndex,
   isParagraphEnd,
+  sourceWord: 0,
 });
 
 /* base duration at 300 WPM is exactly 200ms — easy mental math */
@@ -67,9 +68,34 @@ describe("tokenizeParagraphs", () => {
   it("marks paragraph indices and paragraph-end words", () => {
     const tokens = tokenizeParagraphs(["one two", "three"]);
     expect(tokens).toEqual([
-      { word: "one", paragraphIndex: 0, isParagraphEnd: false },
-      { word: "two", paragraphIndex: 0, isParagraphEnd: true },
-      { word: "three", paragraphIndex: 1, isParagraphEnd: true },
+      { word: "one", paragraphIndex: 0, isParagraphEnd: false, sourceWord: 0 },
+      { word: "two", paragraphIndex: 0, isParagraphEnd: true, sourceWord: 1 },
+      { word: "three", paragraphIndex: 1, isParagraphEnd: true, sourceWord: 0 },
+    ]);
+  });
+
+  it("points every token at the page word it came from, em-dash halves included", () => {
+    // The page counts "war—peace" as one word, so both halves map back to it.
+    const tokens = tokenizeParagraphs(["  it was war—peace — then  calm"]);
+    expect(tokens.map((t) => [t.word, t.sourceWord])).toEqual([
+      ["it", 0],
+      ["was", 1],
+      ["war—", 2],
+      ["peace", 2],
+      ["—", 3],
+      ["then", 4],
+      ["calm", 5],
+    ]);
+  });
+
+  it("counts page words from zero in every paragraph", () => {
+    const tokens = tokenizeParagraphs(["a b", "c—d e"]);
+    expect(tokens.map((t) => [t.word, t.paragraphIndex, t.sourceWord])).toEqual([
+      ["a", 0, 0],
+      ["b", 0, 1],
+      ["c—", 1, 0],
+      ["d", 1, 0],
+      ["e", 1, 1],
     ]);
   });
 

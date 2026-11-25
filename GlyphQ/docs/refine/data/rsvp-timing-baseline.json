@@ -1,0 +1,77 @@
+{
+ "label": "baseline",
+ "rows": [
+  {
+   "frames": "ideal60",
+   "wpm": 300,
+   "words": 1332,
+   "skippedWords": 0,
+   "onsetLateMeanMs": 8.9,
+   "onsetLateP95Ms": 16.7,
+   "onsetLateMaxMs": 16.7,
+   "durErrMeanAbsMs": 1.1,
+   "durErrP95AbsMs": 10,
+   "effectiveWpm": 265
+  },
+  {
+   "frames": "busy",
+   "wpm": 300,
+   "words": 1332,
+   "skippedWords": 0,
+   "onsetLateMeanMs": 12,
+   "onsetLateP95Ms": 33.3,
+   "onsetLateMaxMs": 50,
+   "durErrMeanAbsMs": 6.3,
+   "durErrP95AbsMs": 33.3,
+   "effectiveWpm": 265
+  },
+  {
+   "frames": "ideal60",
+   "wpm": 500,
+   "words": 1332,
+   "skippedWords": 0,
+   "onsetLateMeanMs": 8.2,
+   "onsetLateP95Ms": 16,
+   "onsetLateMaxMs": 16.7,
+   "durErrMeanAbsMs": 5.1,
+   "durErrP95AbsMs": 13.3,
+   "effectiveWpm": 442
+  },
+  {
+   "frames": "busy",
+   "wpm": 500,
+   "words": 1332,
+   "skippedWords": 0,
+   "onsetLateMeanMs": 11.2,
+   "onsetLateP95Ms": 32,
+   "onsetLateMaxMs": 50,
+   "durErrMeanAbsMs": 9.1,
+   "durErrP95AbsMs": 30,
+   "effectiveWpm": 442
+  },
+  {
+   "frames": "ideal60",
+   "wpm": 800,
+   "words": 1332,
+   "skippedWords": 0,
+   "onsetLateMeanMs": 8.3,
+   "onsetLateP95Ms": 15.8,
+   "onsetLateMaxMs": 16.7,
+   "durErrMeanAbsMs": 7.7,
+   "durErrP95AbsMs": 8.3,
+   "effectiveWpm": 706
+  },
+  {
+   "frames": "busy",
+   "wpm": 800,
+   "words": 1332,
+   "skippedWords": 0,
+   "onsetLateMeanMs": 11.9,
+   "onsetLateP95Ms": 31.7,
+   "onsetLateMaxMs": 50,
+   "durErrMeanAbsMs": 11.6,
+   "durErrP95AbsMs": 25,
+   "effectiveWpm": 706
+  }
+ ]
+}

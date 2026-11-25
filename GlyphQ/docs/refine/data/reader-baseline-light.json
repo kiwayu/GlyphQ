@@ -1,0 +1,153 @@
+{
+ "meta": {
+  "label": "baseline-light",
+  "runs": 5,
+  "turns": 30,
+  "cpuThrottle": 4,
+  "theme": "light",
+  "device": "Pixel 5 emulation, headless Chromium"
+ },
+ "summary": {
+  "small-alice": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 484.1,
+    "min": 382.4,
+    "max": 707.2
+   },
+   "locationsMs": {
+    "median": 2439.5,
+    "min": 2291.6,
+    "max": 2898.5
+   },
+   "totalPages": 108,
+   "earlySamePage": {
+    "n": 140,
+    "turnMsP50": 49.5,
+    "turnMsP95": 58.1,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 5
+   },
+   "earlySectionChange": {
+    "n": 10,
+    "turnMsP50": 150.2,
+    "turnMsP95": 182.4,
+    "maxGapP50": 83.3,
+    "maxGapP95": 99.9,
+    "turnsWithDroppedFrame": 10
+   },
+   "steadySamePage": {
+    "n": 135,
+    "turnMsP50": 49.1,
+    "turnMsP95": 58.3,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 0
+   },
+   "steadySectionChange": {
+    "n": 15,
+    "turnMsP50": 141.4,
+    "turnMsP95": 213.8,
+    "maxGapP50": 50.1,
+    "maxGapP95": 133.3,
+    "turnsWithDroppedFrame": 15
+   }
+  },
+  "large-lesmis": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 987.6,
+    "min": 843.6,
+    "max": 1171.7
+   },
+   "locationsMs": {
+    "median": 50402.7,
+    "min": 50198.5,
+    "max": 50592.3
+   },
+   "totalPages": 2219,
+   "earlySamePage": {
+    "n": 149,
+    "turnMsP50": 59.4,
+    "turnMsP95": 71.1,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 5
+   },
+   "earlySectionChange": {
+    "n": 1,
+    "turnMsP50": 36.9,
+    "turnMsP95": 36.9,
+    "maxGapP50": 33.3,
+    "maxGapP95": 33.3,
+    "turnsWithDroppedFrame": 1
+   },
+   "steadySamePage": {
+    "n": 130,
+    "turnMsP50": 70.9,
+    "turnMsP95": 87.3,
+    "maxGapP50": 16.8,
+    "maxGapP95": 33.4,
+    "turnsWithDroppedFrame": 52
+   },
+   "steadySectionChange": {
+    "n": 20,
+    "turnMsP50": 120.6,
+    "turnMsP95": 145.8,
+    "maxGapP50": 33.4,
+    "maxGapP95": 66.7,
+    "turnsWithDroppedFrame": 11
+   }
+  },
+  "images-huckfinn": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 1148.1,
+    "min": 1108.2,
+    "max": 1637.9
+   },
+   "locationsMs": {
+    "median": 7916.2,
+    "min": 7713.1,
+    "max": 8390.5
+   },
+   "totalPages": 394,
+   "earlySamePage": {
+    "n": 120,
+    "turnMsP50": 49.3,
+    "turnMsP95": 63.3,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 5
+   },
+   "earlySectionChange": {
+    "n": 30,
+    "turnMsP50": 100.7,
+    "turnMsP95": 174,
+    "maxGapP50": 33.3,
+    "maxGapP95": 83.3,
+    "turnsWithDroppedFrame": 15
+   },
+   "steadySamePage": {
+    "n": 140,
+    "turnMsP50": 49.8,
+    "turnMsP95": 61.4,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 0
+   },
+   "steadySectionChange": {
+    "n": 10,
+    "turnMsP50": 154.9,
+    "turnMsP95": 200.8,
+    "maxGapP50": 50.1,
+    "maxGapP95": 83.3,
+    "turnsWithDroppedFrame": 10
+   }
+  }
+ }
+}

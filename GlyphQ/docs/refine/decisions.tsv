@@ -1,0 +1,3 @@
+ts	phase	decision	why	evidence	result
+2026-11-25T23:24:30Z	frame	test target is Chromium driven by Playwright with a phone viewport and 4x CPU throttle, not an Android device	no adb, no Android SDK, and Windows reports HypervisorPresent False, so an emulator would need an admin feature install and reboot that should not happen unattended	adb devices: command not found; Win32_ComputerSystem.HypervisorPresent=False	open: native-only numbers (cold start, UI-thread frames) cannot be measured
+2026-11-25T23:24:31Z	frame	sent competitor and RSVP research to a subagent limited to primary sources	no phones here so no first-hand recordings; the research is independent of the code work	docs/refine/teardown.md (pending)	open

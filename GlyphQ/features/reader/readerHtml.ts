@@ -156,7 +156,7 @@ function contentCss(){
     +"color:"+p.fg+" !important;}"
     +"body *:not(img):not(svg):not(video){background-color:transparent !important;}"
     +"a,a *{color:"+p.link+" !important;}"
-    +"p{margin-bottom:.75em;-webkit-hyphens:auto;hyphens:auto;}"
+    +"p{margin-bottom:.75em;-webkit-hyphens:auto;hyphens:auto;hyphenate-limit-chars:7 3 3;}"
     +"h1,h2,h3,h4,h5,h6{margin:1em 0 .5em;}"
     +"img,svg{max-width:100% !important;height:auto !important;}";
 }

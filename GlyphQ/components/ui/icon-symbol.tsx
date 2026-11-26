@@ -39,6 +39,7 @@ const MAPPING = {
   // Actions
   'plus': 'add',
   'plus.circle': 'add-circle-outline',
+  'plus.circle.fill': 'add-circle',
   'checkmark': 'check',
   'play.fill': 'play-arrow',
   'slider.horizontal.3': 'tune',

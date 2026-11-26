@@ -416,7 +416,10 @@ export default function LibraryScreen() {
   [books]);
 
   const recentShelfBooks = useMemo<CoverShelfBook[]>(() =>
-    recentBooks.map((b) => ({ id: b.id, title: b.title, authors: b.authors, cover_url: b.cover_url, status: b.status })),
+    /* A book being read already has its own shelf directly above. */
+    recentBooks
+      .filter((b) => b.status !== "reading")
+      .map((b) => ({ id: b.id, title: b.title, authors: b.authors, cover_url: b.cover_url, status: b.status })),
   [recentBooks]);
 
   /* ── Handlers ────────────────────────────────────── */

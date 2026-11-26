@@ -1,13 +1,21 @@
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Image } from "expo-image";
-import { ResponsiveGrid } from "./ResponsiveGrid";
 import { IconSymbol } from "./icon-symbol";
 import { t } from "@/theme";
+import { useBreakpoint, type Breakpoint } from "@/hooks/useBreakpoint";
 import type { BookCardProgress } from "./BookCard";
 import type { CoverShelfBook } from "./CoverShelf";
 
 /* Bookstore-style grid: front cover first, title + author beneath. Reuses the
-   CoverShelf tile look but sizes each cover to its grid cell (aspect 2:3). */
+   CoverShelf tile look but sizes each cover to its grid cell (aspect 2:3).
+   The grid is drawn one row at a time so a virtualised list can mount only
+   the rows near the screen. */
+
+const COLUMNS: Record<Breakpoint, number> = { mobile: 3, tablet: 4, desktop: 6 };
+
+export function useCoverGridColumns(): number {
+  return COLUMNS[useBreakpoint().breakpoint];
+}
 
 function GridItem({ item, progress, onPress, onLongPress }: {
   item: CoverShelfBook;
@@ -20,7 +28,7 @@ function GridItem({ item, progress, onPress, onLongPress }: {
 
   return (
     <Pressable
-      style={({ pressed }) => [gi.item, pressed && t.press.scale]}
+      style={({ pressed }) => [gi.cell, pressed && t.press.scale]}
       onPress={onPress} onLongPress={onLongPress} delayLongPress={300}
     >
       <View>
@@ -51,27 +59,38 @@ function GridItem({ item, progress, onPress, onLongPress }: {
   );
 }
 
-export function CoverGrid({ data, progressMap, onPress, onLongPress }: {
-  data: CoverShelfBook[];
+/** One row of the grid. A short last row keeps its cells the full-row width. */
+export function CoverGridRow({ books, columns, first, inset, progressMap, onPress, onLongPress }: {
+  books: CoverShelfBook[];
+  columns: number;
+  /** The first row of a grid sits closer to what is above it. */
+  first: boolean;
+  /** Room on the right for the alphabet index. */
+  inset?: boolean;
   progressMap?: Map<number, BookCardProgress>;
   onPress: (id: number) => void;
   onLongPress?: (id: number) => void;
 }) {
   return (
-    <ResponsiveGrid mobileColumns={3} tabletColumns={4} desktopColumns={6}
-      gap={t.space._3} style={gi.grid}>
-      {data.map((item) => (
-        <GridItem key={item.id} item={item} progress={progressMap?.get(item.id)}
-          onPress={() => onPress(item.id)}
-          onLongPress={onLongPress ? () => onLongPress(item.id) : undefined} />
-      ))}
-    </ResponsiveGrid>
+    <View style={[gi.row, first && gi.firstRow, inset && gi.inset]}>
+      {Array.from({ length: columns }, (_, i) => {
+        const item = books[i];
+        if (!item) return <View key={`gap-${i}`} style={gi.cell} />;
+        return (
+          <GridItem key={item.id} item={item} progress={progressMap?.get(item.id)}
+            onPress={() => onPress(item.id)}
+            onLongPress={onLongPress ? () => onLongPress(item.id) : undefined} />
+        );
+      })}
+    </View>
   );
 }
 
 const gi = StyleSheet.create({
-  grid: { paddingHorizontal: t.space._4, marginTop: t.space._2 },
-  item: { width: "100%", marginBottom: t.space._4 },
+  row: { flexDirection: "row", gap: t.space._3, paddingHorizontal: t.space._4, paddingTop: t.space._3 },
+  firstRow: { paddingTop: t.space._2 },
+  inset: { paddingRight: t.space._4 + 22 },
+  cell: { flex: 1, marginBottom: t.space._4 },
   cover: {
     width: "100%",
     aspectRatio: 2 / 3,

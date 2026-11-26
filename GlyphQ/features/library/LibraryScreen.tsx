@@ -3,6 +3,7 @@ import {
   View,
   Text,
   ScrollView,
+  FlatList,
   Pressable,
   ActivityIndicator,
   RefreshControl,
@@ -10,7 +11,7 @@ import {
   TextInput,
   Alert,
   StyleSheet,
-  type LayoutChangeEvent,
+  type ListRenderItemInfo,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -22,7 +23,7 @@ import {
 import { t } from "@/theme";
 import { type BookCardProgress } from "@/components/ui/BookCard";
 import { CoverShelf, type CoverShelfBook } from "@/components/ui/CoverShelf";
-import { CoverGrid } from "@/components/ui/CoverGrid";
+import { CoverGridRow, useCoverGridColumns } from "@/components/ui/CoverGrid";
 import { BookDetailSheet } from "@/components/ui/BookDetailSheet";
 import { SegmentedControl, type Segment } from "@/components/ui/SegmentedControl";
 import { AlphabetIndex } from "@/components/ui/AlphabetIndex";
@@ -98,6 +99,32 @@ function groupByLetter(list: BookWithEntry[]): LetterGroup[] {
 
 interface SeriesGroup { name: string; books: CoverShelfBook[]; }
 
+/* The screen is one virtualised list, and each mode turns its books into
+   rows. A row of covers is one list item, so only rows near the screen are
+   mounted however many books the library holds. */
+type Row =
+  | { kind: "covers"; key: string; books: CoverShelfBook[]; first: boolean }
+  | { kind: "letter"; key: string; letter: string }
+  | { kind: "shelf"; key: string; title: string; books: CoverShelfBook[]; accent: boolean }
+  | { kind: "foldersDivider"; key: string }
+  | { kind: "folder"; key: string; folder: FolderWithBooks; count: number; expanded: boolean }
+  | { kind: "addBook"; key: string }
+  | { kind: "noResults"; key: string; message: string }
+  | { kind: "newFolder"; key: string };
+
+function coverRows(key: string, list: BookWithEntry[], columns: number): Row[] {
+  const rows: Row[] = [];
+  for (let i = 0; i < list.length; i += columns) {
+    rows.push({
+      kind: "covers", key: `${key}-${i}`, first: i === 0,
+      books: list.slice(i, i + columns).map((b) => ({
+        id: b.id, title: b.title, authors: b.authors, cover_url: b.cover_url, status: b.entry.status,
+      })),
+    });
+  }
+  return rows;
+}
+
 function filtersToPrefs(f: LibraryFilters): Partial<LibraryPrefs> {
   return {
     filterStatus: f.status, filterGenres: f.genres, filterAuthors: f.authors,
@@ -114,51 +141,6 @@ function prefsToFilters(p: LibraryPrefs): LibraryFilters {
   };
 }
 
-
-/* ── Collapsible Section ──────────────────────────── */
-
-function CollapsibleSection({
-  title, emoji, count, children,
-  defaultExpanded = true, previewCount = -1,
-  accentColor, rightAction,
-}: {
-  title: string; emoji?: string; count: number; children: React.ReactNode;
-  defaultExpanded?: boolean; previewCount?: number;
-  accentColor?: string; rightAction?: React.ReactNode;
-}) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [showAll, setShowAll] = useState(false);
-  const hasPreview = previewCount >= 0 && count > previewCount;
-  const isShowingPreview = hasPreview && !showAll;
-
-  return (
-    <View style={s.section}>
-      <SectionHeader
-        title={title} emoji={emoji} count={count}
-        chevron={expanded ? "expanded" : "collapsed"}
-        accentColor={accentColor}
-        onPress={() => setExpanded((v) => !v)}
-        rightAction={
-          <View style={s.sectionRight}>
-            {expanded && hasPreview && (
-              <Pressable onPress={() => setShowAll((v) => !v)} hitSlop={8}>
-                <Text style={s.seeAllText}>{showAll ? "Collapse" : "See All"}</Text>
-              </Pressable>
-            )}
-            {rightAction}
-          </View>
-        }
-      />
-      {expanded && (
-        <View style={s.sectionBody}>
-          {isShowingPreview
-            ? (children as React.ReactElement[])?.slice?.(0, previewCount) ?? children
-            : children}
-        </View>
-      )}
-    </View>
-  );
-}
 
 /* ── Empty Section ────────────────────────────────── */
 
@@ -242,9 +224,10 @@ export default function LibraryScreen() {
 
   const [detailBook, setDetailBook] = useState<BookWithEntry | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<number>>(new Set());
 
-  const scrollRef = useRef<ScrollView>(null);
-  const letterPositions = useRef<Map<string, number>>(new Map());
+  const columns = useCoverGridColumns();
+  const listRef = useRef<FlatList<Row>>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── Persistence ────────────────────────────────── */
@@ -490,35 +473,123 @@ export default function LibraryScreen() {
     setDetailBook(null);
   }, [deleteBook]);
 
-  const handleLetterSelect = useCallback((letter: string) => {
-    const y = letterPositions.current.get(letter);
-    if (y != null) scrollRef.current?.scrollTo({ y, animated: true });
+  const toggleFolder = useCallback((id: number) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   }, []);
-
-  const registerLetterPosition = useCallback((letter: string, event: LayoutChangeEvent) => {
-    letterPositions.current.set(letter, event.nativeEvent.layout.y);
-  }, []);
-
-  const renderCoverGrid = useCallback((list: BookWithEntry[]) => (
-    <CoverGrid
-      data={list.map((b) => ({
-        id: b.id, title: b.title, authors: b.authors,
-        cover_url: b.cover_url, status: b.entry.status,
-      }))}
-      progressMap={progressMap}
-      onPress={openBookOrDetail}
-      onLongPress={openDetail}
-    />
-  ), [progressMap, openDetail, openBookOrDetail]);
 
   const showAlphabetView = activeTab !== "all" && !isControlsActive;
 
-  return (
-    <View style={s.root}>
-      <ScrollView
-        ref={scrollRef} style={s.scroller}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={t.color.accent.light} />}
-      >
+  const rows = useMemo<Row[]>(() => {
+    if (isControlsActive || (activeTab === "all" && activeSmartCollection)) {
+      if (filteredSorted.length > 0) return coverRows("results", filteredSorted, columns);
+      const message = isControlsActive ? "No books match your criteria" : "No books in this collection";
+      return [{ kind: "noResults", key: "no-results", message }];
+    }
+    if (activeTab === "all") {
+      const out: Row[] = [];
+      const shelf = (key: string, title: string, list: CoverShelfBook[], accent = false) => {
+        if (list.length > 0) out.push({ kind: "shelf", key, title, books: list, accent });
+      };
+      shelf("reading", "Currently Reading", currentlyReading, true);
+      shelf("recent", "Recently Read", recentShelfBooks);
+      for (const sg of seriesGroups) shelf(`series-${sg.name}`, sg.name, sg.books);
+      if (folders.length > 0) out.push({ kind: "foldersDivider", key: "folders" });
+      for (const folder of folders) {
+        const fBooks = getFolderBooks(folder);
+        const expanded = expandedFolders.has(folder.id);
+        out.push({ kind: "folder", key: `f-${folder.id}`, folder, count: fBooks.length, expanded });
+        if (!expanded) continue;
+        if (fBooks.length > 0) out.push(...coverRows(`f-${folder.id}`, fBooks, columns));
+        else out.push({ kind: "addBook", key: `f-${folder.id}-add` });
+      }
+      out.push({ kind: "newFolder", key: "new-folder" });
+      return out;
+    }
+    if (letterGroups.length === 0) return [{ kind: "addBook", key: "add" }];
+    return letterGroups.flatMap((g): Row[] => [
+      { kind: "letter", key: `l-${g.letter}`, letter: g.letter },
+      ...coverRows(`l-${g.letter}`, g.books, columns),
+    ]);
+  }, [isControlsActive, activeTab, activeSmartCollection, filteredSorted, columns, currentlyReading,
+    recentShelfBooks, seriesGroups, folders, getFolderBooks, expandedFolders, letterGroups]);
+
+  const handleLetterSelect = useCallback((letter: string) => {
+    const index = rows.findIndex((r) => r.kind === "letter" && r.letter === letter);
+    if (index >= 0) listRef.current?.scrollToIndex({ index, animated: true });
+  }, [rows]);
+
+  /* A letter far below has not been laid out yet. Jump near it by the average
+     row height so it renders, then go to it exactly. */
+  const handleScrollToIndexFailed = useCallback(
+    ({ index, averageItemLength }: { index: number; averageItemLength: number }) => {
+      listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false });
+      setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 50);
+    }, []);
+
+  const renderRow = useCallback(({ item }: ListRenderItemInfo<Row>) => {
+    switch (item.kind) {
+      case "covers":
+        return (
+          <CoverGridRow books={item.books} columns={columns} first={item.first} inset={showAlphabetView}
+            progressMap={progressMap} onPress={openBookOrDetail} onLongPress={openDetail} />
+        );
+      case "letter":
+        return (
+          <View style={[s.letterHeader, s.alphabetInset]}>
+            <Text style={s.letterText}>{item.letter}</Text>
+            <View style={s.letterLine} />
+          </View>
+        );
+      case "shelf":
+        return (
+          <CoverShelf title={item.title} data={item.books} progressMap={progressMap}
+            onPress={openBookOrDetail} onLongPress={openDetail} accent={item.accent} />
+        );
+      case "foldersDivider":
+        return (
+          <View style={s.divider}>
+            <View style={s.dividerLine} /><Text style={s.dividerLabel}>Folders</Text><View style={s.dividerLine} />
+          </View>
+        );
+      case "folder":
+        return (
+          <View style={s.section}>
+            <SectionHeader
+              title={item.folder.name} count={item.count} accentColor={item.folder.color}
+              chevron={item.expanded ? "expanded" : "collapsed"}
+              onPress={() => toggleFolder(item.folder.id)}
+              rightAction={
+                <Pressable style={s.deleteBtn} onPress={() => handleDeleteFolder(item.folder)} hitSlop={8}>
+                  <Text style={s.deleteText}>✕</Text>
+                </Pressable>
+              }
+            />
+          </View>
+        );
+      case "addBook":
+        return <EmptySection onAdd={handleAdd} />;
+      case "noResults":
+        return (
+          <View style={s.noResults}>
+            <IconSymbol name="tray" size={40} color={t.color.text.faint} style={{ marginBottom: t.space._2 }} />
+            <Text style={s.noResultsText}>{item.message}</Text>
+          </View>
+        );
+      case "newFolder":
+        return (
+          <Pressable style={s.newFolderBtn} onPress={() => setShowNewFolder(true)}>
+            <Text style={s.newFolderPlus}>+</Text><Text style={s.newFolderLabel}>New Folder</Text>
+          </Pressable>
+        );
+    }
+  }, [columns, showAlphabetView, progressMap, openBookOrDetail, openDetail, toggleFolder, handleDeleteFolder, handleAdd]);
+
+  const listHeader = (
+      <>
         {/* ── Header ─────────────────────────────────── */}
         <View style={s.header}>
           <View>
@@ -561,8 +632,7 @@ export default function LibraryScreen() {
         {/* ── Segmented Control ──────────────────────── */}
         <SegmentedControl segments={segments} activeKey={activeTab} onChange={(k) => {
           setActiveTab(k as TabKey);
-          letterPositions.current.clear();
-          scrollRef.current?.scrollTo({ y: 0, animated: false });
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
         }} />
 
         {/* ── Active controls bar ────────────────────── */}
@@ -633,74 +703,19 @@ export default function LibraryScreen() {
             </ScrollView>
           </View>
         )}
+      </>
+  );
 
-        {isControlsActive ? (
-          <View style={s.flatSection}>
-            {filteredSorted.length > 0 ? renderCoverGrid(filteredSorted) : (
-              <View style={s.noResults}>
-                <IconSymbol name="tray" size={40} color={t.color.text.faint} style={{ marginBottom: t.space._2 }} />
-                <Text style={s.noResultsText}>No books match your criteria</Text>
-              </View>
-            )}
-          </View>
-        ) : activeTab === "all" && !activeSmartCollection ? (
-          <>
-            <CoverShelf title="Currently Reading" data={currentlyReading} progressMap={progressMap}
-              onPress={openBookOrDetail} onLongPress={openDetail} accent />
-            <CoverShelf title="Recently Read" data={recentShelfBooks} progressMap={progressMap}
-              onPress={openBookOrDetail} onLongPress={openDetail} />
-            {seriesGroups.map((sg) => (
-              <CoverShelf key={sg.name} title={sg.name} data={sg.books} progressMap={progressMap}
-                onPress={openBookOrDetail} onLongPress={openDetail} />
-            ))}
-            {folders.length > 0 && (
-              <View style={s.divider}>
-                <View style={s.dividerLine} /><Text style={s.dividerLabel}>Folders</Text><View style={s.dividerLine} />
-              </View>
-            )}
-            {folders.map((folder) => {
-              const fBooks = getFolderBooks(folder);
-              return (
-                <CollapsibleSection key={`f-${folder.id}`} title={folder.name} count={fBooks.length}
-                  accentColor={folder.color} defaultExpanded={false}
-                  rightAction={<Pressable style={s.deleteBtn} onPress={() => handleDeleteFolder(folder)} hitSlop={8}><Text style={s.deleteText}>✕</Text></Pressable>}>
-                  {fBooks.length > 0 ? renderCoverGrid(fBooks) : <EmptySection onAdd={handleAdd} />}
-                </CollapsibleSection>
-              );
-            })}
-            <Pressable style={s.newFolderBtn} onPress={() => setShowNewFolder(true)}>
-              <Text style={s.newFolderPlus}>+</Text><Text style={s.newFolderLabel}>New Folder</Text>
-            </Pressable>
-          </>
-        ) : activeTab === "all" && activeSmartCollection ? (
-          <View style={s.flatSection}>
-            {filteredSorted.length > 0 ? renderCoverGrid(filteredSorted) : (
-              <View style={s.noResults}>
-                <IconSymbol name="tray" size={40} color={t.color.text.faint} style={{ marginBottom: t.space._2 }} />
-                <Text style={s.noResultsText}>No books in this collection</Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          <View style={s.alphabetContent}>
-            {letterGroups.length === 0 ? (
-              <EmptySection onAdd={handleAdd} />
-            ) : (
-              letterGroups.map((group) => (
-                <View key={group.letter} onLayout={(e) => registerLetterPosition(group.letter, e)}>
-                  <View style={s.letterHeader}>
-                    <Text style={s.letterText}>{group.letter}</Text>
-                    <View style={s.letterLine} />
-                  </View>
-                  {renderCoverGrid(group.books)}
-                </View>
-              ))
-            )}
-          </View>
-        )}
-
-        <View style={{ height: t.space._10 }} />
-      </ScrollView>
+  return (
+    <View style={s.root}>
+      <FlatList
+        ref={listRef} style={s.scroller}
+        data={rows} keyExtractor={(r) => r.key} renderItem={renderRow}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={<View style={{ height: t.space._10 }} />}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={t.color.accent.light} />}
+      />
 
       {showAlphabetView && availableLetters.length > 1 && (
         <AlphabetIndex letters={availableLetters} onSelect={handleLetterSelect} />
@@ -769,9 +784,6 @@ const s = StyleSheet.create({
   loader: { alignItems: "center", paddingVertical: t.space._16 - 4 },
 
   section: { marginTop: t.space._4 },
-  sectionRight: { flexDirection: "row", alignItems: "center", gap: t.space._3 },
-  seeAllText: { color: t.color.accent.base, fontSize: 12, fontWeight: "600" },
-  sectionBody: { marginTop: 2 },
 
   emptyCard: {
     marginHorizontal: t.space._5, marginBottom: t.space._3,
@@ -809,12 +821,11 @@ const s = StyleSheet.create({
   newFolderPlus: { color: t.color.accent.light, fontSize: 20, marginRight: t.space._2 },
   newFolderLabel: { ...t.font.caption, color: t.color.text.secondary },
 
-  flatSection: { marginTop: t.space._1 },
   noResults: { alignItems: "center", paddingVertical: t.space._12 },
   noResultsEmoji: { fontSize: 36, marginBottom: t.space._2 },
   noResultsText: { ...t.font.body, color: t.color.text.muted },
 
-  alphabetContent: { marginTop: t.space._1, paddingRight: 22 },
+  alphabetInset: { paddingRight: t.space._5 + 22 },
   letterHeader: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: t.space._5, paddingTop: t.space._4 - 2, paddingBottom: t.space._2,

@@ -110,6 +110,16 @@ test("a page turn moves on, and the book reopens where it was left", async ({ pa
   await expect.poll(() => firstWordOnScreen(page)).not.toBe("c1p1w1");
   const left = await firstWordOnScreen(page);
 
+  // Close the book and open it again from its cover: same page.
+  await tapCentre(page);
+  await page.getByRole("button", { name: "Back to library" }).click();
+  await expect(page.getByText("Currently Reading")).toBeVisible();
+  await expect(page.locator('[data-testid="reader-frame"]')).toHaveCount(0); // the reader is gone, not hidden
+  await page.getByText("Sample Book").first().click();
+  await expect.poll(() => firstWordOnScreen(page), { timeout: 20_000 }).toBe(left);
+  await expect(page.getByRole("button", { name: "Back to library" })).toBeHidden(); // controls start hidden
+
+  // And after a restart.
   await page.waitForTimeout(1500); // position is written 0.8 s after the turn
   await page.reload(); // still on the reader route: the last book reopens by itself
   await expect.poll(() => firstWordOnScreen(page), { timeout: 20_000 }).toBe(left);

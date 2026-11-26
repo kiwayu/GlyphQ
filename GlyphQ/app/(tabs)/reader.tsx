@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useNavigation } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { useLibraryStore } from "@/store/libraryStore";
 import { setEpubPath, removeEpubPath } from "@/services/epubPaths";
 import { resolveBookSource } from "@/services/importBook";
@@ -102,6 +103,13 @@ export default function ReaderTab() {
     router.navigate("/(tabs)");
   }, [router]);
 
+  /* The reader exists only while this tab is on screen. Tabs stay mounted in
+     the background, and a reader left running there keeps a reading session
+     open and its controls in whatever state they were in. Leaving unmounts it
+     (which saves the position and ends the session); coming back mounts a
+     fresh one at the saved position. */
+  const isFocused = useIsFocused();
+
   const handleRemove = useCallback(async () => {
     if (!currentBook) return;
     await removeEpubPath(currentBook.id);
@@ -110,7 +118,7 @@ export default function ReaderTab() {
   }, [currentBook]);
 
   /* full-screen reader — takes over the entire tab */
-  if (currentBook && epubUrl) {
+  if (currentBook && epubUrl && isFocused) {
     return (
       // Key by book+source so switching books fully remounts: fresh WebView
       // (new TOC + chapters) and reset cover-extraction guard. Without this the

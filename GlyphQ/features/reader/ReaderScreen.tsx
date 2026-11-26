@@ -38,7 +38,6 @@ import { tokenizeParagraphs, type Token } from "./rsvp/engine";
 import { classifyGesture, SWIPE_MIN } from "./tapZones";
 import { nextCaretState, startIndexFor, type CaretState } from "./caretState";
 import {
-  toggleBookmark,
   addBookmark,
   deleteBookmark,
   getBookmarksForBook,
@@ -98,6 +97,7 @@ export default function ReaderScreen({ bookId, epubUrl, title, onClose }: Reader
   const htmlRef         = useRef<string | null>(null);
   const coverTriedRef   = useRef(false);
   const cfiRef          = useRef<string | null>(null);
+  const chapterRef      = useRef("");
   const rsvpMarkerRef   = useRef(false); // next currentCfi drops a speed-read marker
   /* Where speed reading should start, and whether that choice is still valid.
      Lifecycle lives in caretState.ts so it can be tested; this ref is just
@@ -389,10 +389,14 @@ export default function ReaderScreen({ bookId, epubUrl, title, onClose }: Reader
 
   const isBookmarked = !!cfi && bookmarks.some((b) => b.cfi === cfi);
 
+  /* A bookmark is named after the chapter it is in: early pages of a book can
+     all be "page 1", and a list of those says nothing. */
   const handleToggleBookmark = useCallback(async () => {
     const at = cfiRef.current;
     if (!at) return;
-    await toggleBookmark(bookId, at, latestPageRef.current || undefined);
+    const existing = (await getBookmarksForBook(bookId)).find((b) => b.cfi === at);
+    if (existing) await deleteBookmark(existing.id);
+    else await addBookmark(bookId, at, chapterRef.current || undefined, latestPageRef.current || undefined);
     setBookmarks(await getBookmarksForBook(bookId));
   }, [bookId]);
 
@@ -535,6 +539,7 @@ export default function ReaderScreen({ bookId, epubUrl, title, onClose }: Reader
             setChapterPage(msg.chapterPage ?? 0);
             setChapterPages(msg.chapterPages ?? 0);
             setChapter(msg.chapter ?? "");
+            chapterRef.current = msg.chapter ?? "";
             /* A caret picked in another chapter is meaningless here. Without
                this, an abandoned pick silently hijacked the next RSVP open. */
             caretRef.current = nextCaretState(caretRef.current, {

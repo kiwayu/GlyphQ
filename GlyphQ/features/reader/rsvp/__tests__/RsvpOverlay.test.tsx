@@ -518,6 +518,43 @@ describe("RsvpOverlay", () => {
     expect(opacity(r, "rsvp-sentence")).toBe(1);
   });
 
+  /* ── fade in on open ───────────────────────────────── */
+
+  it("fades in over about 150ms when opened", () => {
+    const r = mountProse(0);
+    expect(opacity(r, "rsvp-root")).toBe(0);
+    advance(70);
+    expect(opacity(r, "rsvp-root")).toBeGreaterThan(0);
+    expect(opacity(r, "rsvp-root")).toBeLessThan(1);
+    advance(100);
+    expect(opacity(r, "rsvp-root")).toBe(1);
+  });
+
+  it("appears at once when it remounts for the next chapter", () => {
+    // The page underneath must not flash through between chapters.
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={tokens}
+          initialWpm={300}
+          introLabel="Chapter 2"
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    expect(opacity(r, "rsvp-root")).toBe(1);
+  });
+
+  it("appears at once when reduce motion is on", async () => {
+    jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(true);
+    const r = mountProse(0);
+    await act(async () => {}); // let the setting load
+    flushFrame(); // one frame, no time passing
+    expect(opacity(r, "rsvp-root")).toBe(1);
+  });
+
   it("emits WPM changes to the parent", () => {
     const onWpmChange = jest.fn();
     let r!: ReactTestRenderer;

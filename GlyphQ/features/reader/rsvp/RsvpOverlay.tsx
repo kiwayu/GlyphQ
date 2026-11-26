@@ -96,6 +96,8 @@ function sentenceAround(tokens: Token[], index: number): SentenceParts {
   };
 }
 
+const AnimatedSafeAreaView = Animated.createAnimatedComponent(SafeAreaView);
+
 const MONO = Platform.select({
   ios: "Menlo",
   android: "monospace",
@@ -396,6 +398,19 @@ export default function RsvpOverlay({
     opacity: sentenceOpacity.get(),
   }));
 
+  /* Fade in on a normal open. A chapter advance remounts the overlay with an
+     intro label; it appears at once, so the page underneath never flashes
+     through between chapters. */
+  const overlayOpacity = useSharedValue(introLabel ? 1 : 0);
+  useEffect(() => {
+    overlayOpacity.set(
+      a11y.reduceMotion ? 1 : withTiming(1, { duration: FADE_MS })
+    );
+  }, [a11y.reduceMotion, overlayOpacity]);
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.get(),
+  }));
+
   /* During the intro the track is the countdown, so the resume reads as caused
      rather than random. Same pixels, no extra chrome. */
   const progressPct =
@@ -417,7 +432,10 @@ export default function RsvpOverlay({
   /* ── empty chapter ─────────────────────────────────── */
   if (count === 0) {
     return (
-      <SafeAreaView style={[st.root, { backgroundColor: colors.bg }]}>
+      <AnimatedSafeAreaView
+        testID="rsvp-root"
+        style={[st.root, { backgroundColor: colors.bg }, overlayStyle]}
+      >
         <Pressable style={st.closeBtn} onPress={handleClose} hitSlop={12}>
           <Text style={[st.closeTxt, { color: colors.fg }]}>✕</Text>
         </Pressable>
@@ -434,12 +452,15 @@ export default function RsvpOverlay({
             </Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </AnimatedSafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[st.root, { backgroundColor: colors.bg }]}>
+    <AnimatedSafeAreaView
+      testID="rsvp-root"
+      style={[st.root, { backgroundColor: colors.bg }, overlayStyle]}
+    >
       {/* Header */}
       <View style={st.header}>
         <Text style={[st.chapter, { color: colors.sub }]} numberOfLines={1}>
@@ -689,7 +710,7 @@ export default function RsvpOverlay({
           );
         })}
       </View>
-    </SafeAreaView>
+    </AnimatedSafeAreaView>
   );
 }
 

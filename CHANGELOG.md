@@ -2,6 +2,60 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+A pass over the core path (add a book, read, speed read, change speed, change
+theme) that started from measurements. Numbers, method and open questions are
+in `GlyphQ/docs/refine/REPORT.md`. Nothing in this section has run on a phone
+yet; it was measured and tested in Chromium.
+
+### Added
+- **The web build can read books.** The reader runs in the browser, imported
+  books are kept in browser storage, and app themes and library import work
+  there.
+- **One tap back after a jump.** Going to a chapter, a bookmark or a point on
+  the progress bar leaves a "Back to page N" button for the next few pages.
+- **A bookmark list.** Contents and Bookmarks share one sheet. Bookmarks could
+  be added before but never seen. The bookmark icon shows when a page is marked.
+- **Speed reading shows the sentence you are in while paused**, and « and » step
+  by sentence instead of five words.
+- **End-to-end tests for the reading path**, run in CI.
+
+### Changed
+- **Add opens the file picker, then the book.** Importing and starting to read
+  took six taps and two alerts; it takes two taps. A tap on a cover opens the
+  book; long-press shows its details.
+- **Speed reading starts on the page you are reading** and no longer asks
+  "Resume or start over" first.
+- **Leaving speed reading lands on the word you stopped at**, marked for a
+  moment, instead of the first page of that paragraph.
+- **The speed shown is the speed you get.** Pauses used to be added on top, so
+  "300" delivered about 265 words a minute.
+- **Reading controls stay until you dismiss them.** They used to hide after 3.5
+  seconds. The tab bar hides while a book is open.
+- **Dark and Night keep pictures in their own colours.** They used to invert the
+  whole page.
+- **Page numbers are remembered per book.** On a long book they took 50 seconds
+  to compute on every open; later opens have them in under a second.
+
+### Fixed
+- Text size, font, spacing, margins and theme chosen while reading are now
+  saved. Every book used to open at the defaults, and the Reader section of
+  Settings had no effect.
+- A damaged EPUB showed "Opening book" for ever. It now says it cannot be opened.
+- The last page turn was lost if the app closed within two seconds of it.
+- Speed reading read a quoted or listed paragraph twice.
+- An imported book kept its file name as its title.
+- The first import could fail with "no such table" because the database was
+  used before its setup finished.
+- Settings offered fonts the reader does not have; choosing one silently gave
+  Georgia.
+
+### Removed
+- The session summary alert on closing a book.
+- The highlights button. No highlight could be created, because the page's tap
+  layer covers the text. The stored data is untouched.
+
 ## [1.2.0] - 2026-07-30
 
 The release that turns the reader from "it opens EPUBs" into something you can

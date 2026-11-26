@@ -133,7 +133,7 @@ export default function ReaderScreen({ bookId, epubUrl, title, onClose }: Reader
      background; replaced by what is actually saved before the page loads. */
   const [settings,     setSettings]     = useState<ReaderSettings>(() =>
     toReaderSettings(
-      { readerFont: "Georgia", readerFontSize: 17, readerTheme: "light", readerMatchApp: true, readerLineHeight: 1.6, readerMargin: 24 },
+      { readerFont: "Georgia", readerFontSize: 17, readerTheme: "light", readerMatchApp: true, readerLineHeight: 1.6, readerMargin: 20 },
       appPalette(),
       isThemeDark(getThemeId())
     )

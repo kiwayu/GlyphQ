@@ -14,8 +14,8 @@
  * Per word:
  *   onset lateness = time the word first appeared - time the schedule starts it
  *   duration error = time it stayed on screen - duration the engine intended
- * Effective wpm = words shown / minutes elapsed. The engine adds pauses on top
- * of 60000/wpm, so this sits below the wpm the reader picked.
+ * Effective wpm = words shown / minutes elapsed. It should equal the wpm set:
+ * the engine scales every duration so the average word lasts 60000/wpm.
  */
 const fs = require("fs");
 const path = require("path");

@@ -3,6 +3,11 @@
  * opens the Done tab (a grid of every finished book), scrolls it top to bottom
  * with the wheel under 4x CPU throttle, and reports frame gaps.
  *
+ * The wheel keeps going until the list is at its end, so a longer list is
+ * scrolled in full. Every 10 steps it checks whether any book is under three
+ * points of the screen (a list that renders lazily can show blank space), and
+ * at the end it checks that the last book in A-Z order is on screen.
+ *
  *   node perf/library-scroll.cjs [label] [books=400]     (dev server on :8090)
  */
 const fs = require("fs");
@@ -51,20 +56,55 @@ for (let i = 1; i <= N; i++) {
 
   const cdp = await ctx.newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
-  await page.evaluate(() => { window.__f = []; const tick = (t) => { window.__f.push(t); requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
   const vp = page.viewportSize();
+  // The tallest scrolling element is the library list. Frame times and blank
+  // samples are recorded inside the page, so the wheel never pauses for them.
+  await page.evaluate(({ w, h }) => {
+    const els = [...document.querySelectorAll("*")].filter((e) => e.scrollHeight > e.clientHeight && /auto|scroll/.test(getComputedStyle(e).overflowY));
+    window.__list = els.sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+    window.__f = [];
+    window.__blank = { samples: 0, blank: 0 };
+    const tick = (t) => { if (window.__stop) return; window.__f.push(t); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+    const pts = [[w * 0.25, h * 0.3], [w * 0.25, h * 0.5], [w * 0.25, h * 0.7]];
+    const sample = setInterval(() => {
+      if (window.__stop) return clearInterval(sample);
+      const book = pts.some(([x, y]) => /Sample Title/.test(document.elementFromPoint(x, y)?.closest('[tabindex="0"]')?.textContent ?? ""));
+      window.__blank.samples++; if (!book) window.__blank.blank++;
+    }, 200);
+  }, { w: vp.width, h: vp.height });
+  const stepsLeft = () => page.evaluate(() => { const s = window.__list; return Math.ceil((s.scrollHeight - s.clientHeight - s.scrollTop) / 240); });
   await page.mouse.move(vp.width / 2, vp.height / 2);
-  for (let i = 0; i < 150; i++) { await page.mouse.wheel(0, 240); await page.waitForTimeout(16); }
-  await page.waitForTimeout(300);
-  const { frames, scrolled } = await page.evaluate(() => {
-    const els = [...document.querySelectorAll("*")].filter((e) => e.scrollTop > 0);
-    return { frames: window.__f, scrolled: Math.max(0, ...els.map((e) => e.scrollTop)) };
-  });
+  let steps = 0, tEnd = Infinity;
+  for (let left = await stepsLeft(); steps < 3000;) {
+    if (left <= 0) {
+      tEnd = await page.evaluate(() => performance.now());
+      await page.waitForTimeout(300);
+      left = await stepsLeft(); // a lazily measured list can grow once its end renders
+      if (left <= 0) break;
+    }
+    for (let i = 0; i < left; i++, steps++) { await page.mouse.wheel(0, 240); await page.waitForTimeout(16); }
+    left = await stepsLeft();
+  }
+  await page.evaluate(() => { window.__stop = true; });
+  const lastTitle = seed.books.map((b) => b.title).sort((a, b) => a.localeCompare(b)).pop();
+  const lastBox = await page.getByText(lastTitle, { exact: true }).boundingBox().catch(() => null);
+  const { frames, blank, scrolled, scrollMax, domNodesEnd, listTop, listBottom } = await page.evaluate((end) => {
+    const r = window.__list.getBoundingClientRect();
+    return {
+      frames: window.__f.filter((t) => t <= end), blank: window.__blank, scrolled: window.__list.scrollTop,
+      scrollMax: window.__list.scrollHeight - window.__list.clientHeight,
+      domNodesEnd: document.querySelectorAll("*").length, listTop: r.top, listBottom: r.bottom,
+    };
+  }, tEnd);
   await browser.close();
   const gaps = frames.slice(1).map((t, i) => t - frames[i]);
   const span = frames[frames.length - 1] - frames[0];
   const row = {
-    label, books: N, domNodes: nodes, tabOpenMs, scrolledPx: Math.round(scrolled),
+    label, books: N, domNodes: nodes, domNodesEnd, tabOpenMs,
+    scrolledPx: Math.round(scrolled), scrollMaxPx: Math.round(scrollMax), wheelSteps: steps,
+    lastBook: lastTitle, lastBookOnScreen: !!lastBox && lastBox.y >= listTop && lastBox.y + lastBox.height <= listBottom,
+    blankSamples: `${blank.blank}/${blank.samples}`,
     fps: r1((gaps.length / span) * 1000),
     frameGapP50: r1(q(gaps, 0.5)), frameGapP95: r1(q(gaps, 0.95)), frameGapMax: r1(Math.max(...gaps)),
     droppedPct: r1((100 * gaps.filter((g) => g > FRAME * 1.5).length) / gaps.length),

@@ -26,13 +26,13 @@ Same harness, same three books, 5 runs each, 30 turns per phase. Median, with ra
 |---|---|---|---|---|
 | Open to first page | Alice 0.19 MB | 484 ms (382–707) | 482 ms (418–627) | no measurable difference |
 | | Les Misérables 10.1 MB | 988 ms (844–1172) | 911 ms (903–1111) | no measurable difference |
-| | Huckleberry Finn 16 MB, illustrated | 1148 ms (1108–1638) | 1331 ms (1239–1338) | AB_HUCK |
+| | Huckleberry Finn 16 MB, illustrated | 1148 ms (1108–1638) | 1331 ms (1239–1338) | no measurable difference: run back to back and alternating, the original page opened in 1430 and 1239 ms and the new one in 1240 and 1306 ms (5 runs each) |
 | Page numbers ready, first open | Alice / Les Mis / Huck | 2.4 s / 50.4 s / 7.9 s | 2.5 s / 50.9 s / 8.1 s | no measurable difference (not targeted) |
 | **Page numbers ready, later opens** | Alice / Les Mis / Huck | 2.4 s / 50.4 s / 7.9 s | **0.3 s / 0.7 s / 0.8 s** | faster: cached per book |
 | Progress shown before page numbers exist | all | nothing | estimate from chapter position | new |
 | Turn inside a chapter, turns with a dropped frame | Alice | 0 of 135 | 0 of 135 | same |
 | | Huck | 0 of 140 | 0 of 140 | same |
-| | Les Mis | 52 of 130 | 73 of 130 | AB_LESMIS |
+| | Les Mis | 52 of 130 | 73 of 130 | no measurable difference: back to back, the original page dropped a frame on 45 and 43 of 78 turns and the new one on 43 and 42 of 78. The 52-against-73 gap is the machine drifting over the hours between the two sessions |
 | Turn across a chapter boundary, worst gap p95 | Alice / Les Mis / Huck | 133 / 67 / 83 ms | 100 / 83 / 83 ms | no measurable difference |
 | Damaged file | | "Opening book…" for ever | error with "Back to library" | fixed |
 | Dark theme pictures | | inverted | true colours | fixed (checked in Chromium only) |
@@ -49,7 +49,17 @@ Engine driven by a perfect 60 Hz clock, 1332 words (`perf/rsvp-timing.cjs`):
 | 500 | 442 | **500** | 16.0 ms | 16.1 ms |
 | 800 | 706 | **800** | 15.8 ms | 16.5 ms |
 
-RSVP_LIVE
+The real overlay in the web app, CPU throttled 4×, 20 s of playback at each speed (`perf/rsvp-live.cjs`, `data/rsvp-live-after.json`). There is no "before": the overlay could not mount on web at baseline.
+
+| wpm set | Frames | Frame gap p95 | Longest gap | Frames dropped | Words shown in 20 s | Speed over that stretch |
+|---|---|---|---|---|---|---|
+| 300 | 1210 | 16.8 ms | 33.3 ms | 2 (0.2%) | 97 | 291 wpm |
+| 500 | 1210 | 16.7 ms | 33.4 ms | 1 (0.1%) | 167 | 504 wpm |
+| 800 | 1212 | 16.8 ms | 16.8 ms | 0 | 252 | 756 wpm |
+
+Feeding that recorded frame clock back through the engine gives onset lateness p95 of 16.3, 16.4 and 16.7 ms at 300, 500 and 800 wpm, over the 104, 169 and 272 words the 20 s covered. So the 500 wpm target is met on a real clock too, with 0.3 ms to spare.
+
+Two caveats. The speed over a 20 s stretch is not exactly the setting because the engine makes the average true over the whole chapter, and a stretch with many sentence ends runs slower than one with few. And on web React puts each new word on screen about one frame (16 ms median) after the frame that chose it. That is a constant delay, not drift: every word is late by the same amount, so durations are unaffected. Whether React Native has the same one-frame delay could not be measured here.
 
 What "drift" can and cannot be: the overlay picks the word for each frame from elapsed time, so a late frame never accumulates (the word index is recomputed, not stepped). A word can still appear up to one frame after its scheduled start, because a screen only changes on a frame. That is why p95 sits at one frame and will not go lower without changing how words map to frames.
 
@@ -97,10 +107,10 @@ Not verified: how any of this looks on a phone.
 
 | Suite | Before | After |
 |---|---|---|
-| jest | 180 pass | JEST pass |
+| jest | 180 pass | 218 pass |
 | Playwright (web) | 3 smoke tests; reading not covered | 10: the 3 smoke tests and 7 on the core path (add, read, resume, speed read, appearance, contents and bookmarks, damaged file, non-book file) |
 | CI | lint, jest | lint, jest, Playwright: green on PR 13 |
-| lint | 0 errors, 10 warnings | 0 errors, LINT warnings |
+| lint | 0 errors, 10 warnings | 0 errors, 10 warnings |
 
 ## Edge cases asked for
 
@@ -113,7 +123,7 @@ Not verified: how any of this looks on a phone.
 
 ## What got worse or is unverified
 
-WORSE
+Nothing that was measured ended up worse. Two numbers looked worse in the first after-run (open time on the illustrated book, dropped frames on the long book); alternating the original and new page back to back showed no difference, so they are reported above as drift. Unverified or changed in ways you should know:
 
 - **Everything native.** The file picker, the WebView bridge, Reanimated layout animations, hiding the tab bar, and AsyncStorage for page numbers were written against their documented behaviour and type-check, and none of it was run on Android or iOS.
 - **The dark-theme fallback is gone.** Colours are painted through epub.js's content hook, which is what the default "match app" theme already used. The old filter worked even if a device blocked access to the book frame. If dark text ever shows on a dark page on a phone, this is where to look.

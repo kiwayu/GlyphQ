@@ -28,9 +28,22 @@ Ranked by how often a reader meets the problem on the default path (import, read
 | 22 | Last page turn is lost if the app is closed within 2 s | A | Write on background and on close; debounce 0.8 s | | No lost page | done |
 | 23 | A quoted or listed paragraph is read twice in speed reading | found in code | Read leaf blocks only | | No repeated text | done |
 | 24 | Imported book keeps its file name as title | found in screenshots | Use the book's own title when the title is still the file name | | Real titles in the library | done |
-| 25 | Chapter-boundary page turn drops frames (worst gap p95 67–133 ms) | B | Prototype: load the next chapter ahead of time | | Smaller gap at chapter ends | prototype, see report |
-| 26 | Page turn has no animation | T | Prototype: compositor smooth scroll, off under reduced motion | Apple Books, Kobo, Moon+: page animation is a user choice | Continuity between pages | prototype, see report |
+| 25 | Chapter-boundary page turn drops frames (worst gap p95 67–133 ms) | B | Prototype: load the next chapter ahead of time | | Smaller gap at chapter ends | prototyped and reverted: no measurable difference |
+| 26 | Page turn has no animation | T | Prototype: compositor smooth scroll, off under reduced motion | Apple Books, Kobo, Moon+: page animation is a user choice | Continuity between pages | prototyped and discarded: two quick taps misalign the page |
 | 27 | Long-chapter page turns drop a frame (52 of 130 on Les Misérables) | B | None found in app code: the time is inside epub.js position mapping | | | not fixed, cause documented |
+
+## Found while doing the work
+
+| # | Problem | How it was found | Change | Status |
+|---|---|---|---|---|
+| 28 | Closing a book left the reader running behind the library: the session kept counting and the controls stayed open | A recording of the add-and-read flow | The reader exists only while its tab is on screen | done, e2e test |
+| 29 | Every bookmark in a book's front pages was named "Page 1" | A recording | Bookmarks take the chapter's name | done |
+| 30 | Settings offered five fonts the reader does not have, and not Charter, which it does | Wiring saved appearance to the reader | Settings lists the reader's four fonts | done |
+| 31 | Settings > Import library imported nothing on web and never refreshed the library | Seeding a library to measure scrolling | Read the picked file; reload the library store | done |
+| 32 | Picking an app theme did nothing on web | Taking the palette screenshots | localStorage and a page reload on web | done |
+| 33 | Library scrolling slows with library size: 60 fps at 100 books, 50 at 400, 21 at 1000 (4× throttle) | `perf/library-scroll.cjs` | Render only the rows near the screen | see report |
+| 34 | On a phone, a new app theme only applies after the app restarts (release builds have no `DevSettings.reload`) | Reading `theme.ts` | Not changed: styles are built once at start-up, so a live switch means reworking how every screen reads its colours | open |
+| 35 | 20 `Alert.alert` calls are silent on web (delete confirmations, export results) | Flow audit | Not changed outside the core path | open |
 
 ## Left out on purpose
 

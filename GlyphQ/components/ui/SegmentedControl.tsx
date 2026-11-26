@@ -1,5 +1,12 @@
 import { useRef, useEffect } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet, Animated } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { t } from "@/theme";
 
 export interface Segment {
@@ -16,22 +23,16 @@ interface SegmentedControlProps {
 
 export function SegmentedControl({ segments, activeKey, onChange }: SegmentedControlProps) {
   const scrollRef = useRef<ScrollView>(null);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
+  /* The pill that becomes active dips and springs back. Reanimated runs it on
+     the UI thread and skips it when the system asks for reduced motion. */
+  const scale = useSharedValue(1);
   useEffect(() => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: t.anim.microBounce.toValue,
-        duration: t.anim.microBounce.duration,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: t.anim.spring.friction,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [activeKey, scaleAnim]);
+    scale.value = withSequence(
+      withTiming(t.anim.microBounce.toValue, { duration: t.anim.microBounce.duration }),
+      withSpring(1, { damping: 14, stiffness: 220 })
+    );
+  }, [activeKey, scale]);
+  const bounce = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
     <View style={sc.container}>
@@ -46,7 +47,7 @@ export function SegmentedControl({ segments, activeKey, onChange }: SegmentedCon
           return (
             <Animated.View
               key={seg.key}
-              style={active ? { transform: [{ scale: scaleAnim }] } : undefined}
+              style={active ? bounce : undefined}
             >
               <Pressable
                 style={[sc.pill, active && sc.pillActive]}

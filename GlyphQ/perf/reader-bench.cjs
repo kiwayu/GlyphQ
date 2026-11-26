@@ -34,6 +34,10 @@ const TURNS = Number(opt("turns", 30));
 const THROTTLE = Number(opt("throttle", 4));
 const THEME = opt("theme", "light");
 const BOOKS = opt("books", "small-alice,large-lesmis").split(",");
+/* Experiments: --css appends a rule to the reader page; --reopen opens each
+   book a second time with the page numbers the first open produced. */
+const EXTRA_CSS = opt("css", "");
+const REOPEN = args.includes("--reopen");
 const ORIGIN = "http://bench.local";
 const FRAME = 1000 / 60;
 
@@ -44,16 +48,18 @@ const q = (xs, p) => {
 };
 const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
 
-async function oneRun(browser, book) {
+async function oneRun(browser, book, savedLocations = null) {
   const ctx = await browser.newContext({ ...devices["Pixel 5"] });
   const page = await ctx.newPage();
   const cdp = await ctx.newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
 
-  const html = buildReaderHtml(`${ORIGIN}/books/${book}.epub`, null, {
-    ...DEFAULT_SETTINGS,
-    theme: THEME,
-  });
+  const html = buildReaderHtml(
+    `${ORIGIN}/books/${book}.epub`,
+    null,
+    { ...DEFAULT_SETTINGS, theme: THEME },
+    savedLocations
+  ).replace("</style>", EXTRA_CSS + "</style>");
   await page.route(`${ORIGIN}/**`, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/reader.html") {
@@ -135,6 +141,7 @@ async function oneRun(browser, book) {
     .catch(() => null);
   out.locationsMs = gen ? gen.t : null;
   out.totalPages = gen ? gen.totalPages : null;
+  out.locations = gen && typeof gen.locations === "string" ? gen.locations : null;
   for (let i = 0; i < TURNS; i++) {
     const t = await turn();
     t.phase = "steady";
@@ -154,6 +161,12 @@ async function oneRun(browser, book) {
     for (const book of BOOKS) {
       const res = await oneRun(browser, book);
       res.run = r;
+      if (REOPEN && res.locations) {
+        const again = await oneRun(browser, book, res.locations);
+        res.reopenOpenMs = again.openMs;
+        res.reopenLocationsMs = again.locationsMs;
+      }
+      delete res.locations;
       results.push(res);
       process.stderr.write(`run ${r} ${book}: open ${r1(res.openMs)} ms, locations ${r1(res.locationsMs)} ms, errors ${res.errors.length}\n`);
     }
@@ -181,13 +194,15 @@ async function oneRun(browser, book) {
       openMs: { median: r1(q(opens, 0.5)), min: r1(Math.min(...opens)), max: r1(Math.max(...opens)) },
       locationsMs: { median: r1(q(locs, 0.5)), min: r1(Math.min(...locs)), max: r1(Math.max(...locs)) },
       totalPages: rs[0] && rs[0].totalPages,
+      reopenLocationsMs: REOPEN ? r1(q(rs.map((x) => x.reopenLocationsMs).filter((x) => x != null), 0.5)) : undefined,
+      reopenOpenMs: REOPEN ? r1(q(rs.map((x) => x.reopenOpenMs).filter((x) => x != null), 0.5)) : undefined,
       earlySamePage: stat(pick("early", false)),
       earlySectionChange: stat(pick("early", true)),
       steadySamePage: stat(pick("steady", false)),
       steadySectionChange: stat(pick("steady", true)),
     };
   }
-  const meta = { label, runs: RUNS, turns: TURNS, cpuThrottle: THROTTLE, theme: THEME, device: "Pixel 5 emulation, headless Chromium" };
+  const meta = { label, runs: RUNS, turns: TURNS, cpuThrottle: THROTTLE, theme: THEME, css: EXTRA_CSS || undefined, device: "Pixel 5 emulation, headless Chromium" };
   fs.mkdirSync(path.join(__dirname, "out"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "out", `reader-${label}.json`), JSON.stringify({ meta, summary, results }, null, 1));
   console.log(JSON.stringify({ meta, summary }, null, 1));

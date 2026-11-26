@@ -43,6 +43,6 @@ Every flow below is therefore blocked on web at the first step. The web build is
 | Case | Result | How checked |
 |---|---|---|
 | File that is not a zip, named `.epub` | Rejected at import with "doesn't look like a valid EPUB file" | inferred: `looksLikeZip` on the first 4 bytes |
-| Truncated zip (valid header, cut off) | Passes import. Reader shows its error panel. | observed in the reader harness, see baseline |
+| Truncated zip (valid header, cut off) | Passes import. The reader then shows "Opening book…" for ever: no error, no way out except the hidden back control. epub.js signals the failure only through an `openFailed` event that nothing listened to. | observed in the reader harness (`perf/out/trunc.cjs`, 8 s wait, no message posted) |
 | Image-heavy 16 MB book | Opens. See baseline for times. | observed in the reader harness |
 | Kill app mid-chapter | Position is saved 2 s after each page turn, so a kill inside that window loses one page turn. | inferred: `SAVE_DEBOUNCE = 2000` |

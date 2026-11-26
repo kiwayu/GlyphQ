@@ -139,6 +139,14 @@ export async function writeReaderHtmlFile(
   return dest;
 }
 
+/**
+ * A URL the reader page can fetch. Native file:// and remote URLs are already
+ * readable; the web build (localEpub.web.ts) turns stored books into blob: URLs.
+ */
+export async function toReadableUrl(uri: string): Promise<string> {
+  return uri;
+}
+
 /** Root the WebView is allowed to read on iOS (books/ and reader/ live under it). */
 export function readAccessRoot(): string | undefined {
   return FileSystem.documentDirectory ?? undefined;

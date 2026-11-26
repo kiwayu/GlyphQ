@@ -4,6 +4,7 @@
  * with <Image source={{uri}}>, so a file:// path is all it needs.
  */
 
+import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import { execute, getOne } from "@/db/database";
 
@@ -35,6 +36,11 @@ export async function saveCover(
 ): Promise<string | null> {
   const parsed = parseCoverDataUrl(dataUrl);
   if (!parsed) return null;
+  if (Platform.OS === "web") {
+    // No file system in the browser: the data URL itself is the cover.
+    await execute("UPDATE books SET cover_url = ? WHERE id = ?", [dataUrl, bookId]);
+    return dataUrl;
+  }
   await FileSystem.makeDirectoryAsync(COVERS_DIR(), { intermediates: true });
   const dest = `${COVERS_DIR()}book-${bookId}.${parsed.ext}`;
   await FileSystem.writeAsStringAsync(dest, parsed.base64, {

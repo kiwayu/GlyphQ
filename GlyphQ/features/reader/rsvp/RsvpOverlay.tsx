@@ -471,6 +471,8 @@ export default function RsvpOverlay({
           onPress={handleClose}
           hitSlop={12}
           testID="rsvp-close"
+          accessibilityRole="button"
+          accessibilityLabel="Back to the page"
         >
           <Text style={[st.closeTxt, { color: colors.fg }]}>✕</Text>
         </Pressable>
@@ -646,6 +648,8 @@ export default function RsvpOverlay({
             onPress={toggle}
             disabled={advancing}
             testID="rsvp-playpause"
+            accessibilityRole="button"
+            accessibilityLabel={playing || intro ? "Pause" : finished ? "Restart chapter" : "Play"}
           >
             <Text style={st.playTxt}>
               {intro ? "❚❚" : finished ? "↻" : playing ? "❚❚" : "▶"}
@@ -671,6 +675,8 @@ export default function RsvpOverlay({
           style={[st.wpmStep, { borderColor: colors.border }]}
           onPress={() => changeWpm(wpm - WPM_STEP)}
           testID="rsvp-wpm-dec"
+          accessibilityRole="button"
+          accessibilityLabel={`Slower, ${WPM_STEP} words per minute`}
         >
           <Text style={[st.wpmStepTxt, { color: colors.fg }]}>−</Text>
         </Pressable>
@@ -679,6 +685,8 @@ export default function RsvpOverlay({
           style={[st.wpmStep, { borderColor: colors.border }]}
           onPress={() => changeWpm(wpm + WPM_STEP)}
           testID="rsvp-wpm-inc"
+          accessibilityRole="button"
+          accessibilityLabel={`Faster, ${WPM_STEP} words per minute`}
         >
           <Text style={[st.wpmStepTxt, { color: colors.fg }]}>+</Text>
         </Pressable>
@@ -697,6 +705,9 @@ export default function RsvpOverlay({
                 active && { backgroundColor: colors.barBg },
               ]}
               onPress={() => changeWpm(p)}
+              accessibilityRole="button"
+              accessibilityLabel={`${p} words per minute`}
+              accessibilityState={{ selected: active }}
             >
               <Text
                 style={[

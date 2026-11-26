@@ -1,12 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /*
- * E2E smoke suite against the Expo web build.
- * Native-only flows (device import picker, file:// reader, RSVP on device)
- * are out of scope here — they need a device; see e2e/smoke.spec.ts header.
+ * E2E suite against the Expo web build: the smoke tests (every tab renders)
+ * and the core reading path (e2e/reader.spec.ts). The native file picker and
+ * the native WebView are not exercised here; they need a device.
  */
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

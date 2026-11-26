@@ -1,8 +1,6 @@
 /*
  * Web smoke suite: the app boots, every tab renders, and navigation is
- * console-error-free. Native-only flows are NOT covered here and need a
- * device (Expo Go): device import (expo-document-picker), epub reading
- * (react-native-webview + file://), and the RSVP overlay entry point.
+ * console-error-free. The reading path itself is covered in reader.spec.ts.
  */
 import { test, expect, type Page } from "@playwright/test";
 

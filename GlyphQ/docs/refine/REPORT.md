@@ -73,7 +73,7 @@ Before is read from the code at `22f95e9` (the web build could not run these flo
 |---|---|---|
 | Add a book and start reading | 6 taps, 2 alerts | **2** (Add, pick the file) |
 | Open a book in the library | 2 (cover, "Open in Reader") | **1** (cover) |
-| Resume after restarting the app | 3 (Library is first, cover, "Open in Reader") | **1** (cover, or the Reader tab) |
+| Resume after restarting the app | 2 (cover, "Open in Reader") | **1** (cover, or the Reader tab) |
 | Enter speed reading | 2, plus an alert when there is a saved position; starts at the chapter's first word | 2, no alert; starts at the top of the page on screen |
 | Change speed | 1 | 1 (the number shown is now the real speed) |
 | Leave speed reading | 1; lands on the paragraph's first page; adds a bookmark every time | 1; lands on the word, marked; one marker per book |
@@ -94,7 +94,7 @@ Before is read from the code at `22f95e9` (the web build could not run these flo
 | Preload the next chapter to smooth the boundary turn? | Load the next spine item 400 ms after each turn | Worst gap p50 66.7 ms with and without; 10 of 10 turns still drop a frame | **Reverted.** The cost is layout, which preloading does not touch. |
 | Does hyphenation slow the page? | Benchmark with and without the rule | 58 vs 54 of 104 turns; open 1272 vs 1304 ms | No measurable difference. Kept for the typography. |
 | Normalise speed so the label is true? | Engine change, checked in the harness | 265 to 300, 442 to 500, 706 to 800 | **Kept.** |
-| Splitting `ReaderScreen.tsx` to cut re-renders | Split into the screen and two sheets, 1889 to about 800 lines | Not measured: the old screen could not run on web, so there is no before | Kept for readability. No speed claim. |
+| Splitting `ReaderScreen.tsx` to cut re-renders | Split into the screen (1082 lines) and two sheets (459 lines); it was 1889 | Not measured: the old screen could not run on web, so there is no before | Kept for readability. No speed claim. |
 | List virtualisation for the library | LIBRARY | | |
 
 ## Animations

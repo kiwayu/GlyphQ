@@ -60,7 +60,7 @@ export default function ContentsSheet({
                 </Pressable>
               ))}
             </View>
-            <Pressable onPress={onClose} style={st.close} accessibilityLabel="Close" hitSlop={8}>
+            <Pressable onPress={onClose} style={st.close} accessibilityRole="button" accessibilityLabel="Close" hitSlop={8}>
               <Text style={st.closeText}>✕</Text>
             </Pressable>
           </View>
@@ -111,6 +111,7 @@ export default function ContentsSheet({
                   <Pressable
                     onPress={() => onDeleteBookmark(bm.id)}
                     hitSlop={10}
+                    accessibilityRole="button"
                     accessibilityLabel="Remove bookmark"
                   >
                     <Text style={st.remove}>Remove</Text>

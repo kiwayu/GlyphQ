@@ -191,6 +191,8 @@ const st = StyleSheet.create({
     backgroundColor: t.color.bg.base,
     borderTopLeftRadius: t.radius["4xl"],
     borderTopRightRadius: t.radius["4xl"],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border.default,
     ...t.shadow.heavy,
   },
   handle: {

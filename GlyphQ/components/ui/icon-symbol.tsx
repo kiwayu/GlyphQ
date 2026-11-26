@@ -22,6 +22,7 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  'chevron.left': 'chevron-left',
   'chevron.up': 'keyboard-arrow-up',
   'chevron.down': 'keyboard-arrow-down',
   'xmark': 'close',
@@ -38,6 +39,7 @@ const MAPPING = {
   // Actions
   'plus': 'add',
   'plus.circle': 'add-circle-outline',
+  'plus.circle.fill': 'add-circle',
   'checkmark': 'check',
   'play.fill': 'play-arrow',
   'slider.horizontal.3': 'tune',
@@ -45,6 +47,9 @@ const MAPPING = {
 
   // Reader / library content
   'bookmark.fill': 'bookmark',
+  'bookmark': 'bookmark-border',
+  'list.bullet': 'format-list-bulleted',
+  'textformat.size': 'format-size',
   'highlighter': 'border-color',
   'note.text': 'notes',
   'bolt.fill': 'bolt',

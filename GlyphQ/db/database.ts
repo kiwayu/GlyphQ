@@ -60,8 +60,17 @@ async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!initPromise) {
     initPromise = (async () => {
       await migrateLegacyDatabase();
-      db = await SQLite.openDatabaseAsync(DB_NAME);
-      await initializeDatabase(db);
+      /* Publish the handle only once the schema is in place. Assigning it
+         first let any query that arrived mid-setup, or after a failed setup,
+         run against a database with tables missing. */
+      const opened = await SQLite.openDatabaseAsync(DB_NAME);
+      try {
+        await initializeDatabase(opened);
+      } catch (e) {
+        console.warn("Database setup failed:", e);
+        throw e;
+      }
+      db = opened;
     })();
   }
 

@@ -37,7 +37,9 @@ const DEFAULTS: AppSettings = {
   readerTheme: "light",
   readerMatchApp: true,
   readerLineHeight: 1.6,
-  readerMargin: 24,
+  /* 20, not the 24 this used to say: the reader ignored the setting and drew
+     20. Now that it honours the setting, the default keeps the page as it was. */
+  readerMargin: 20,
   yearlyBookGoal: 0,
   dailyPageGoal: 0,
   dailyReadingMinutes: 0,

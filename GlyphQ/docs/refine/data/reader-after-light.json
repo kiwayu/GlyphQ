@@ -1,0 +1,159 @@
+{
+ "meta": {
+  "label": "after-light",
+  "runs": 5,
+  "turns": 30,
+  "cpuThrottle": 4,
+  "theme": "light",
+  "device": "Pixel 5 emulation, headless Chromium"
+ },
+ "summary": {
+  "small-alice": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 481.6,
+    "min": 417.9,
+    "max": 626.8
+   },
+   "locationsMs": {
+    "median": 2455.4,
+    "min": 2369.7,
+    "max": 2772.4
+   },
+   "totalPages": 108,
+   "reopenLocationsMs": 320.2,
+   "reopenOpenMs": 434.9,
+   "earlySamePage": {
+    "n": 139,
+    "turnMsP50": 49.5,
+    "turnMsP95": 62,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 4
+   },
+   "earlySectionChange": {
+    "n": 11,
+    "turnMsP50": 164.6,
+    "turnMsP95": 243.8,
+    "maxGapP50": 99.9,
+    "maxGapP95": 166.6,
+    "turnsWithDroppedFrame": 10
+   },
+   "steadySamePage": {
+    "n": 135,
+    "turnMsP50": 50.8,
+    "turnMsP95": 57.4,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 0
+   },
+   "steadySectionChange": {
+    "n": 15,
+    "turnMsP50": 154.8,
+    "turnMsP95": 194.3,
+    "maxGapP50": 66.7,
+    "maxGapP95": 100,
+    "turnsWithDroppedFrame": 15
+   }
+  },
+  "large-lesmis": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 910.6,
+    "min": 903.1,
+    "max": 1110.6
+   },
+   "locationsMs": {
+    "median": 50892.1,
+    "min": 50693.4,
+    "max": 51117.2
+   },
+   "totalPages": 2219,
+   "reopenLocationsMs": 698.5,
+   "reopenOpenMs": 977.6,
+   "earlySamePage": {
+    "n": 150,
+    "turnMsP50": 61.2,
+    "turnMsP95": 77.5,
+    "maxGapP50": 16.8,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 6
+   },
+   "earlySectionChange": {
+    "n": 0,
+    "turnMsP50": null,
+    "turnMsP95": null,
+    "maxGapP50": null,
+    "maxGapP95": null,
+    "turnsWithDroppedFrame": 0
+   },
+   "steadySamePage": {
+    "n": 130,
+    "turnMsP50": 72.9,
+    "turnMsP95": 87.1,
+    "maxGapP50": 33.3,
+    "maxGapP95": 33.4,
+    "turnsWithDroppedFrame": 73
+   },
+   "steadySectionChange": {
+    "n": 20,
+    "turnMsP50": 127.3,
+    "turnMsP95": 158.5,
+    "maxGapP50": 50,
+    "maxGapP95": 83.4,
+    "turnsWithDroppedFrame": 10
+   }
+  },
+  "images-huckfinn": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 1331.1,
+    "min": 1238.7,
+    "max": 1337.8
+   },
+   "locationsMs": {
+    "median": 8098.1,
+    "min": 8033.5,
+    "max": 8259.2
+   },
+   "totalPages": 394,
+   "reopenLocationsMs": 797.8,
+   "reopenOpenMs": 1265.3,
+   "earlySamePage": {
+    "n": 120,
+    "turnMsP50": 51.1,
+    "turnMsP95": 66,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 5
+   },
+   "earlySectionChange": {
+    "n": 30,
+    "turnMsP50": 115.1,
+    "turnMsP95": 203,
+    "maxGapP50": 49.9,
+    "maxGapP95": 100,
+    "turnsWithDroppedFrame": 16
+   },
+   "steadySamePage": {
+    "n": 140,
+    "turnMsP50": 51.8,
+    "turnMsP95": 61.2,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 0
+   },
+   "steadySectionChange": {
+    "n": 10,
+    "turnMsP50": 174.9,
+    "turnMsP95": 194.7,
+    "maxGapP50": 66.7,
+    "maxGapP95": 83.4,
+    "turnsWithDroppedFrame": 10
+   }
+  }
+ }
+}

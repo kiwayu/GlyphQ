@@ -1,31 +1,30 @@
-import {
-  useState,
-  useRef,
-  useCallback,
-  useEffect,
-  useMemo,
-} from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
   Pressable,
-  ScrollView,
   StyleSheet,
-  Animated,
   AppState,
-  Alert,
-  Platform,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  buildReaderHtml,
-  DEFAULT_SETTINGS,
-  type ReaderSettings,
-  type ReaderTheme,
-  type ReaderFont,
-} from "./readerHtml";
+  ReaderWebView,
+  type ReaderWebViewHandle,
+  type WebViewMessageEvent,
+} from "@/components/ReaderWebView";
+import { buildReaderHtml, type ReaderSettings } from "./readerHtml";
+import { READER_THEMES } from "./readerThemes";
+import {
+  loadReaderSettings,
+  saveReaderSettings,
+  loadLocations,
+  saveLocations,
+  toReaderSettings,
+} from "./readerPrefs";
+import AppearanceSheet from "./AppearanceSheet";
+import ContentsSheet, { type TocItem } from "./ContentsSheet";
 import {
   startSession,
   endSession,
@@ -34,43 +33,22 @@ import {
   setRsvpWordIndex,
 } from "@/services/readingTracker";
 import { loadPrefs, savePrefs } from "@/services/preferences";
-import { getSetting } from "@/services/settings";
 import RsvpOverlay from "./rsvp/RsvpOverlay";
 import { tokenizeParagraphs, type Token } from "./rsvp/engine";
 import { classifyGesture, SWIPE_MIN } from "./tapZones";
+import { nextCaretState, startIndexFor, type CaretState } from "./caretState";
 import {
-  nextCaretState,
-  startIndexFor,
-  type CaretState,
-} from "./caretState";
-import {
-  addHighlight,
-  getHighlightsForBook,
-  deleteHighlight,
-  HIGHLIGHT_COLORS,
-  type Highlight,
-} from "@/services/highlights";
-import {
-  toggleBookmark,
   addBookmark,
+  deleteBookmark,
   getBookmarksForBook,
   type Bookmark,
 } from "@/services/bookmarks";
-import { writeReaderHtmlFile, readAccessRoot } from "@/services/localEpub";
+import { writeReaderHtmlFile, readAccessRoot, toReadableUrl } from "@/services/localEpub";
 import { hasCover, saveCover } from "@/services/epubCover";
 import { applyEpubMeta } from "@/services/epubMeta";
 import { useLibraryStore } from "@/store/libraryStore";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { t, getThemeId, isThemeDark } from "@/theme";
-
-/* ── Types ──────────────────────────────────────────── */
-
-interface TocItem {
-  id: string;
-  label: string;
-  href: string;
-  level: number;
-}
 
 interface ReaderScreenProps {
   bookId:  number;
@@ -79,74 +57,29 @@ interface ReaderScreenProps {
   onClose?: () => void;
 }
 
-/* ── Constants ──────────────────────────────────────── */
+/* Position is written this long after the last page turn, and at once when
+   the app is backgrounded or the book is closed. */
+const SAVE_DEBOUNCE = 800;
+/* The "back to page N" pill survives this many page turns after a jump. */
+const RETURN_TURNS = 3;
+const RSVP_MARK = "⚡ Speed reading";
 
-const FONT_SIZES    = [13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 26];
-const LINE_HEIGHTS  = [1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0];
-const MARGINS       = [8, 12, 16, 20, 24, 28, 32, 40, 48];
-const SAVE_DEBOUNCE = 2000;
-const AUTO_HIDE_MS  = 3500;
-const SHEET_HEIGHT  = 440;
+/* What is on screen over the page. One value, so two layers can never be up
+   at once and "is anything open" is not a five-way boolean test. */
+type Chrome = "hidden" | "bars" | "appearance" | "contents";
 
-const THEME_BG: Record<ReaderTheme, string> = {
-  light: "#fafafa",
-  sepia: "#f4ecd8",
-  dark:  "#1c1c1c",
-  night: "#000000",
-};
-const THEME_FG: Record<ReaderTheme, string> = {
-  light: "#1a1a1a",
-  sepia: "#5b4636",
-  dark:  "#d4d4d4",
-  night: "#a0a0a0",
-};
-const THEME_BAR_BG: Record<ReaderTheme, string> = {
-  light: "rgba(250,250,250,0.96)",
-  sepia: "rgba(237,226,204,0.96)",
-  dark:  "rgba(20,20,20,0.97)",
-  night: "rgba(0,0,0,0.98)",
-};
-const THEME_BAR_BORDER: Record<ReaderTheme, string> = {
-  light: "rgba(0,0,0,0.08)",
-  sepia: "rgba(91,70,54,0.12)",
-  dark:  "rgba(255,255,255,0.08)",
-  night: "rgba(255,255,255,0.05)",
-};
-const THEME_SUB: Record<ReaderTheme, string> = {
-  light: "#888",
-  sepia: "#917562",
-  dark:  "#777",
-  night: "#555",
-};
-const THEME_ACCENT: Record<ReaderTheme, string> = {
-  light: "#3f82bc",
-  sepia: "#8b5e3c",
-  dark:  "#88BDF2",
-  night: "#6A89A7",
-};
-const THEME_SWATCHES: Record<ReaderTheme, string> = THEME_BG;
-const THEME_LABEL: Record<ReaderTheme, string> = {
-  light: "Light",
-  sepia: "Sepia",
-  dark:  "Dark",
-  night: "Night",
-};
-const FONT_LABEL: Record<ReaderFont, string> = {
-  georgia:  "Georgia",
-  palatino: "Palatino",
-  charter:  "Charter",
-  system:   "System",
-};
+const BAR_IN = FadeIn.duration(150);
+const BAR_OUT = FadeOut.duration(100);
 
-const THEMES_ORDER: ReaderTheme[] = ["light", "sepia", "dark", "night"];
-const FONTS_ORDER:  ReaderFont[]  = ["georgia", "palatino", "charter", "system"];
+const appPalette = () => ({
+  bg: t.color.bg.base,
+  fg: t.color.text.primary,
+  link: t.color.accent.base,
+});
 
-/* ── Reading time helper ────────────────────────────── */
-
-function readingTimeLabel(currentPage: number, totalPages: number): string {
+function minutesLeftLabel(currentPage: number, totalPages: number): string {
   if (!totalPages || !currentPage) return "";
-  const remaining = Math.max(0, totalPages - currentPage);
-  const mins = Math.round(remaining * 1.2);
+  const mins = Math.round(Math.max(0, totalPages - currentPage) * 1.2);
   if (mins < 1) return "< 1 min left";
   if (mins < 60) return `${mins} min left`;
   const h = Math.floor(mins / 60);
@@ -154,22 +87,17 @@ function readingTimeLabel(currentPage: number, totalPages: number): string {
   return m > 0 ? `${h}h ${m}m left` : `${h}h left`;
 }
 
-/* ── Main component ─────────────────────────────────── */
-
-export default function ReaderScreen({
-  bookId,
-  epubUrl,
-  title,
-  onClose,
-}: ReaderScreenProps) {
-  const webViewRef      = useRef<WebView>(null);
+export default function ReaderScreen({ bookId, epubUrl, title, onClose }: ReaderScreenProps) {
+  const webViewRef      = useRef<ReaderWebViewHandle>(null);
   const saveTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hideTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef  = useRef<{ cfi: string; pct: number; page: number } | null>(null);
   const sessionIdRef    = useRef<number | null>(null);
   const startPageRef    = useRef<number>(0);
   const latestPageRef   = useRef<number>(0);
   const htmlRef         = useRef<string | null>(null);
   const coverTriedRef   = useRef(false);
+  const cfiRef          = useRef<string | null>(null);
+  const chapterRef      = useRef("");
   const rsvpMarkerRef   = useRef(false); // next currentCfi drops a speed-read marker
   /* Where speed reading should start, and whether that choice is still valid.
      Lifecycle lives in caretState.ts so it can be tested; this ref is just
@@ -196,39 +124,44 @@ export default function ReaderScreen({
   const originRef       = useRef<{ x: number; y: number } | null>(null);
   const multiTouchRef   = useRef(false);
 
-  const [htmlReady,     setHtmlReady]     = useState(false);
+  const [htmlReady,    setHtmlReady]    = useState(false);
   /* file:// URI of the written reader HTML when the book is a local file
      (iOS WKWebView cannot XHR file:// from an HTML-string origin — Spike #0) */
-  const [sourceUri,     setSourceUri]     = useState<string | null>(null);
-  // Reader opens in a theme matching the app mode (dark app → dark pages).
-  const [settings,      setSettings]      = useState<ReaderSettings>(
-    () => ({ ...DEFAULT_SETTINGS, theme: isThemeDark(getThemeId()) ? "dark" : "light" })
+  const [sourceUri,    setSourceUri]    = useState<string | null>(null);
+  const [loadError,    setLoadError]    = useState<string | null>(null);
+  /* Starts as the saved-settings defaults so the first frame has the right
+     background; replaced by what is actually saved before the page loads. */
+  const [settings,     setSettings]     = useState<ReaderSettings>(() =>
+    toReaderSettings(
+      { readerFont: "Georgia", readerFontSize: 17, readerTheme: "light", readerMatchApp: true, readerLineHeight: 1.6, readerMargin: 20 },
+      appPalette(),
+      isThemeDark(getThemeId())
+    )
   );
-  const [showControls,  setShowControls]  = useState(false);
-  const [showSettings,  setShowSettings]  = useState(false);
-  const [showToc,       setShowToc]       = useState(false);
-  const [toc,           setToc]           = useState<TocItem[]>([]);
-  const [chapter,       setChapter]       = useState("");
-  const [percentage,    setPercentage]    = useState(0);
-  const [currentPage,   setCurrentPage]   = useState(0);
-  const [totalPages,    setTotalPages]    = useState(0);
-  const [chapterPage,   setChapterPage]   = useState(0);
-  const [chapterPages,  setChapterPages]  = useState(0);
-  const [highlights,    setHighlights]    = useState<Highlight[]>([]);
-  const [bookmarks,     setBookmarks]     = useState<Bookmark[]>([]);
-  const [showBookmarks, setShowBookmarks] = useState(false);
-  const [showHighlights,setShowHighlights]= useState(false);
-  const [sessionStartTime] = useState(Date.now());
-  const [sessionPages,  setSessionPages]  = useState(0);
+  const settingsRef     = useRef(settings);
+  const [chrome,       setChrome]       = useState<Chrome>("hidden");
+  const [toc,          setToc]          = useState<TocItem[]>([]);
+  const [chapter,      setChapter]      = useState("");
+  const [percentage,   setPercentage]   = useState(0);
+  const [currentPage,  setCurrentPage]  = useState(0);
+  const [totalPages,   setTotalPages]   = useState(0);
+  const [chapterPage,  setChapterPage]  = useState(0);
+  const [chapterPages, setChapterPages] = useState(0);
+  const [cfi,          setCfi]          = useState<string | null>(null);
+  const [bookmarks,    setBookmarks]    = useState<Bookmark[]>([]);
+  /* Set by any jump (contents, bookmark, scrubber): where the reader was. */
+  const [returnTo,     setReturnTo]     = useState<{ cfi: string; page: number } | null>(null);
+  const turnsSinceJumpRef = useRef(0);
 
   /* ── Seek slider (jump to any page) ── */
-  const [seeking,       setSeeking]       = useState(false);
-  const [seekPct,       setSeekPct]       = useState(0);
+  const [seeking,      setSeeking]      = useState(false);
+  const [seekPct,      setSeekPct]      = useState(0);
   const seekWidthRef    = useRef(0);
 
   /* ── RSVP speed reading ── */
   const [showRsvp,      setShowRsvp]      = useState(false);
   const [rsvpTokens,    setRsvpTokens]    = useState<Token[]>([]);
+  const rsvpTokensRef   = useRef<Token[]>([]);
   const [rsvpChapter,   setRsvpChapter]   = useState("");
   const [rsvpWpm,       setRsvpWpm]       = useState(300);
   const rsvpStartIdxRef = useRef(0);
@@ -258,51 +191,40 @@ export default function ReaderScreen({
   const rsvpHrefRef     = useRef<string | null>(null);
   const savedRsvpHrefRef = useRef<string | null>(null);
 
-  const sheetAnim = useRef(new Animated.Value(0)).current;
-
-  /* load saved WPM preference once */
   useEffect(() => {
     loadPrefs().then((p) => setRsvpWpm(p.rsvpWpm ?? 300));
   }, []);
 
-  /* The WebView message handler and the debounced progress writer both run
-     outside render and need the live value, not a captured one. */
   useEffect(() => { showRsvpRef.current = showRsvp; }, [showRsvp]);
 
-  /* ── HTML built once after loading saved progress ── */
+  /* ── HTML built once, from saved position, appearance and page numbers ── */
 
   useEffect(() => {
     let cancelled = false;
-    getProgress(bookId).then(async (row) => {
-      const savedCfi  = row?.cfi ?? null;
-      const savedPage = row?.current_page ?? 0;
-      const savedPct  = row?.percentage ?? 0;
+    (async () => {
+      const [row, saved, locations, readable] = await Promise.all([
+        getProgress(bookId),
+        loadReaderSettings(appPalette(), isThemeDark(getThemeId())),
+        loadLocations(bookId),
+        toReadableUrl(epubUrl),
+      ]);
+      if (cancelled) return;
       rsvpStartIdxRef.current = row?.rsvp_word_index ?? 0;
       savedRsvpHrefRef.current = row?.rsvp_href ?? null;
-      if (savedPage && !cancelled) {
+      const savedPage = row?.current_page ?? 0;
+      if (savedPage) {
         startPageRef.current  = savedPage;
         latestPageRef.current = savedPage;
         setCurrentPage(savedPage);
-        setPercentage(savedPct);
+        setPercentage(row?.percentage ?? 0);
       }
-      // Reader theme: follow the app theme (exact palette), or a chosen theme.
-      const matchApp = await getSetting("readerMatchApp");
-      const epubTheme: ReaderTheme = matchApp
-        ? (isThemeDark(getThemeId()) ? "dark" : "light")
-        : await getSetting("readerTheme");
-      const palette = matchApp
-        ? { bg: t.color.bg.base, fg: t.color.text.primary, link: t.color.accent.base }
-        : { bg: null, fg: null, link: null };
-      if (!cancelled) setSettings((prev) => ({ ...prev, theme: epubTheme, ...palette }));
-      const html = buildReaderHtml(epubUrl, savedCfi, {
-        ...DEFAULT_SETTINGS,
-        theme: epubTheme,
-        ...palette,
-      });
+      settingsRef.current = saved;
+      setSettings(saved);
+      const html = buildReaderHtml(readable, row?.cfi ?? null, saved, locations);
       htmlRef.current = html;
       /* Local files load via a file:// HTML document (same documentDirectory
          tree) so epub.js can XHR the book on iOS. Remote URLs keep the
-         original HTML-string path — zero behavior change for them. */
+         HTML-string path. */
       let uri: string | null = null;
       if (epubUrl.startsWith("file://")) {
         try {
@@ -315,14 +237,11 @@ export default function ReaderScreen({
         setSourceUri(uri);
         setHtmlReady(true);
       }
-    });
+    })();
     return () => { cancelled = true; };
   }, [bookId, epubUrl]);
 
-  /* ── Load highlights & bookmarks ─────────────────── */
-
   useEffect(() => {
-    getHighlightsForBook(bookId).then(setHighlights);
     getBookmarksForBook(bookId).then(setBookmarks);
   }, [bookId]);
 
@@ -336,160 +255,123 @@ export default function ReaderScreen({
     sessionIdRef.current = null;
   }, []);
 
+  /* ── Progress saving ────────────────────────────── */
+
+  /* Write the pending position now. Called by the debounce timer, and directly
+     when the app is backgrounded or the book closes: the timer alone lost the
+     last page turn whenever either happened inside the debounce window. */
+  const flushProgress = useCallback(async () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    pendingSaveRef.current = null;
+    /* Speed reading drives real navigations (chapter advance, close-time
+       seek). Those must not clear the RSVP resume pointer — D16 clears it
+       when NORMAL reading resumes, and neither of these is that. */
+    const inRsvp = showRsvpRef.current || rsvpSeekingRef.current;
+    await updateProgress(bookId, pending.page, pending.pct, pending.cfi, inRsvp);
+    /* Nor should they rotate the page-reading session: the spine walk fires
+       several of these, which would scatter one RSVP session across rows
+       and inflate pages_read with synthetic jumps. */
+    if (inRsvp) return;
+    const pagesRead = Math.max(0, pending.page - startPageRef.current);
+    if (sessionIdRef.current && pagesRead > 0) {
+      await endSession(sessionIdRef.current, pagesRead);
+      sessionIdRef.current = await startSession(bookId);
+      startPageRef.current = pending.page;
+    }
+  }, [bookId]);
+
+  const saveProgressSoon = useCallback(
+    (at: string, pct: number, page: number) => {
+      latestPageRef.current = page;
+      pendingSaveRef.current = { cfi: at, pct, page };
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(flushProgress, SAVE_DEBOUNCE);
+    },
+    [flushProgress]
+  );
+
   useEffect(() => {
     startSession(bookId).then((id) => { sessionIdRef.current = id; });
     return () => {
-      finishSession();
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      flushProgress().then(finishSession);
       if (caretTimerRef.current) clearTimeout(caretTimerRef.current);
     };
-  }, [bookId, finishSession]);
+  }, [bookId, finishSession, flushProgress]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "background" || state === "inactive") {
-        finishSession();
+        flushProgress().then(finishSession);
       } else if (state === "active" && !sessionIdRef.current) {
         startPageRef.current = latestPageRef.current;
         startSession(bookId).then((id) => { sessionIdRef.current = id; });
       }
     });
     return () => sub.remove();
-  }, [bookId, finishSession]);
-
-  /* ── Progress saving ────────────────────────────── */
-
-  const saveProgressDebounced = useCallback(
-    (cfi: string, pct: number, page: number) => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      latestPageRef.current = page;
-      saveTimerRef.current = setTimeout(async () => {
-        /* Speed reading drives real navigations (chapter advance, close-time
-           seek). Those must not clear the RSVP resume pointer — D16 clears it
-           when NORMAL reading resumes, and neither of these is that. */
-        const inRsvp = showRsvpRef.current || rsvpSeekingRef.current;
-        await updateProgress(bookId, page, pct, cfi, inRsvp);
-        /* Nor should they rotate the page-reading session: the spine walk fires
-           several of these, which would scatter one RSVP session across rows
-           and inflate pages_read with synthetic jumps. */
-        if (inRsvp) return;
-        const pagesRead = Math.max(0, page - startPageRef.current);
-        if (sessionIdRef.current && pagesRead > 0) {
-          await endSession(sessionIdRef.current, pagesRead);
-          const newId = await startSession(bookId);
-          sessionIdRef.current = newId;
-          startPageRef.current = page;
-        }
-      }, SAVE_DEBOUNCE);
-    },
-    [bookId]
-  );
-
-  /* ── Auto-hide controls ─────────────────────────── */
-
-  const clearHideTimer = useCallback(() => {
-    if (hideTimerRef.current) {
-      clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = null;
-    }
-  }, []);
+  }, [bookId, finishSession, flushProgress]);
 
   /* Every gesture ends here, including interrupted ones. Clearing the origin
-     matters: after this change it decides which page turn fires, so a stale
-     one from an aborted touch would score the next gesture. */
+     matters: it decides which page turn fires, so a stale one from an aborted
+     touch would score the next gesture. */
   const resetGesture = useCallback(() => {
     phaseRef.current = "idle";
     originRef.current = null;
     multiTouchRef.current = false;
   }, []);
 
-  const showAndReset = useCallback(() => {
-    setShowControls(true);
-    clearHideTimer();
-    hideTimerRef.current = setTimeout(() => setShowControls(false), AUTO_HIDE_MS);
-  }, [clearHideTimer]);
-
-  const keepAlive = useCallback(() => {
-    if (!showControls) return;
-    clearHideTimer();
-    hideTimerRef.current = setTimeout(() => setShowControls(false), AUTO_HIDE_MS);
-  }, [showControls, clearHideTimer]);
-
-  /* ── WebView JS injection ───────────────────────── */
-
   const inject = useCallback(
     (js: string) => webViewRef.current?.injectJavaScript(js + ";true;"),
     []
   );
 
-  /* ── Settings ───────────────────────────────────── */
+  /* ── Appearance ─────────────────────────────────── */
 
+  /* A change applies to the page at once and becomes the saved default, so
+     the next book opens the way this one was left. */
   const updateSettings = useCallback(
     (patch: Partial<ReaderSettings>) => {
-      setSettings((prev) => {
-        const next = { ...prev, ...patch };
-        // Picking a classic reader theme in-book clears the app-palette colours
-        // so the classic (filter) theme takes over.
-        if (patch.theme !== undefined && patch.bg === undefined) {
-          next.bg = null; next.fg = null; next.link = null;
-        }
-        const json = JSON.stringify(JSON.stringify(next));
-        inject(`window.readerApi.applySettings(${json})`);
-        return next;
-      });
+      const next = { ...settingsRef.current, ...patch };
+      settingsRef.current = next;
+      setSettings(next);
+      inject(`window.readerApi.applySettings(${JSON.stringify(JSON.stringify(next))})`);
+      saveReaderSettings(next);
     },
     [inject]
   );
 
-  const openSettings = useCallback(() => {
-    clearHideTimer();
-    setShowSettings(true);
-    Animated.spring(sheetAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 40,
-    }).start();
-  }, [clearHideTimer, sheetAnim]);
-
-  const closeSettings = useCallback(() => {
-    Animated.spring(sheetAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 40,
-    }).start(() => {
-      setShowSettings(false);
-      showAndReset();
-    });
-  }, [sheetAnim, showAndReset]);
-
-  const sheetTranslateY = sheetAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [SHEET_HEIGHT + 60, 0],
-  });
-
   /* ── Navigation ─────────────────────────────────── */
 
-  const nextPage = useCallback(() => {
-    inject("window.readerApi.nextPage()");
-    keepAlive();
-  }, [inject, keepAlive]);
-
-  const prevPage = useCallback(() => {
-    inject("window.readerApi.prevPage()");
-    keepAlive();
-  }, [inject, keepAlive]);
-
-  const goToChapter = useCallback(
-    (href: string) => {
-      inject(`window.readerApi.goToChapter(${JSON.stringify(href)})`);
-      setShowToc(false);
-      showAndReset();
+  const turn = useCallback(
+    (dir: "next" | "prev") => {
+      inject(dir === "next" ? "window.readerApi.nextPage()" : "window.readerApi.prevPage()");
+      setChrome("hidden");
+      if (++turnsSinceJumpRef.current >= RETURN_TURNS) setReturnTo(null);
     },
-    [inject, showAndReset]
+    [inject]
   );
+
+  /* Any jump away from the page being read remembers that page, so one tap
+     brings the reader back (contents, a bookmark, or the scrubber). */
+  const jump = useCallback(
+    (js: string) => {
+      if (cfiRef.current) {
+        setReturnTo({ cfi: cfiRef.current, page: latestPageRef.current });
+        turnsSinceJumpRef.current = 0;
+      }
+      inject(js);
+      setChrome("hidden");
+    },
+    [inject]
+  );
+
+  const goBack = useCallback(() => {
+    if (!returnTo) return;
+    inject(`window.readerApi.goToCfi(${JSON.stringify(returnTo.cfi)})`);
+    setReturnTo(null);
+  }, [inject, returnTo]);
 
   /* Drag the progress bar to jump to any page. locationX is relative to the
      seek track (no horizontal padding), so x/width == fraction read. */
@@ -499,23 +381,37 @@ export default function ReaderScreen({
   }, []);
 
   const commitSeek = useCallback(() => {
-    inject(`window.readerApi.goToPercentage(${seekPct})`);
     setSeeking(false);
-    showAndReset();
-  }, [inject, seekPct, showAndReset]);
+    jump(`window.readerApi.goToPercentage(${seekPct})`);
+  }, [jump, seekPct]);
 
-  /* ── Bookmark toggle ───────────────────────────── */
+  /* ── Bookmarks ─────────────────────────────────── */
 
+  const isBookmarked = !!cfi && bookmarks.some((b) => b.cfi === cfi);
+
+  /* A bookmark is named after the chapter it is in: early pages of a book can
+     all be "page 1", and a list of those says nothing. */
   const handleToggleBookmark = useCallback(async () => {
-    // Request current CFI from the WebView
-    inject("window.readerApi.getCurrentCfi()");
-  }, [inject]);
+    const at = cfiRef.current;
+    if (!at) return;
+    const existing = (await getBookmarksForBook(bookId)).find((b) => b.cfi === at);
+    if (existing) await deleteBookmark(existing.id);
+    else await addBookmark(bookId, at, chapterRef.current || undefined, latestPageRef.current || undefined);
+    setBookmarks(await getBookmarksForBook(bookId));
+  }, [bookId]);
+
+  const handleDeleteBookmark = useCallback(
+    async (id: number) => {
+      await deleteBookmark(id);
+      setBookmarks(await getBookmarksForBook(bookId));
+    },
+    [bookId]
+  );
 
   /* ── Speed reading (RSVP) ──────────────────────── */
 
   const openRsvp = useCallback(() => {
-    clearHideTimer();
-    setShowControls(false);
+    setChrome("hidden");
     rsvpWordsRef.current = 0;
     setRsvpIntro(undefined);
     setRsvpAdvancing(false);
@@ -525,7 +421,7 @@ export default function ReaderScreen({
     startSession(bookId, "rsvp").then((id) => { rsvpSessionRef.current = id; });
     // Pull the current chapter's text; handler opens the overlay on reply.
     inject("window.readerApi.getChapterText()");
-  }, [inject, clearHideTimer, bookId]);
+  }, [inject, bookId]);
 
   /* Chapter finished: walk the book itself to the next one and pull its text.
      The reply arrives as a chapterText message flagged `advanced`. The guard
@@ -547,25 +443,27 @@ export default function ReaderScreen({
 
   const closeRsvp = useCallback(
     (lastIndex: number) => {
+      const tokens = rsvpTokensRef.current;
       setShowRsvp(false);
       showRsvpRef.current = false;
       advancingRef.current = false;
       setRsvpAdvancing(false);
       setRsvpEndOfBook(false);
       setRsvpIntro(undefined);
-      const hadTokens = rsvpTokens.length > 0;
+      const hadTokens = tokens.length > 0;
       if (hadTokens) {
         /* Cancel any advance still walking the spine FIRST. Without this its
            display() resolves after our seek and drags the book a chapter
            forward — the exact bug this whole feature exists to prevent. */
         rsvpSeekingRef.current = true;
         inject("window.readerApi.cancelAdvance()");
-        /* Leave the page where speed reading stopped, not where it was when the
-           overlay opened. Tokens carry the block they came from, and goToBlock
-           posts back the landed CFI — which drops the marker in the right spot. */
-        const stop = rsvpTokens[Math.min(lastIndex, rsvpTokens.length - 1)];
+        /* Leave the page on the word where speed reading stopped, not where it
+           was when the overlay opened. A token carries the text block it came
+           from and its word within that block; the page turns to that word and
+           marks it for a moment. */
+        const stop = tokens[Math.min(lastIndex, tokens.length - 1)];
         rsvpMarkerRef.current = true;
-        inject(`window.readerApi.goToBlock(${stop?.paragraphIndex ?? 0})`);
+        inject(`window.readerApi.goToBlock(${stop.paragraphIndex},${stop.sourceWord})`);
       }
       // Close the RSVP session with everything streamed across all chapters.
       const words = rsvpWordsRef.current + (hadTokens ? lastIndex + 1 : 0);
@@ -574,35 +472,19 @@ export default function ReaderScreen({
         endSession(sid, 0, { wordsRead: words, wpmLast: rsvpWpm });
         rsvpSessionRef.current = null;
       }
+      rsvpTokensRef.current = [];
       setRsvpTokens([]);
       rsvpWordsRef.current = 0;
       // Persist resume pointer (clamped to a real word, scoped to its chapter)
       // and remember the speed.
       const stopHref = rsvpHrefRef.current;
       savedRsvpHrefRef.current = hadTokens ? stopHref : null;
+      rsvpStartIdxRef.current = hadTokens ? lastIndex : 0;
       setRsvpWordIndex(bookId, hadTokens ? lastIndex : null, stopHref);
       savePrefs({ rsvpWpm });
-      showAndReset();
     },
-    [bookId, rsvpTokens, rsvpWpm, showAndReset, inject]
+    [bookId, rsvpWpm, inject]
   );
-
-  /* ── Session summary on close ──────────────────── */
-
-  const handleClose = useCallback(() => {
-    const elapsed = Date.now() - sessionStartTime;
-    const mins = Math.round(elapsed / 60000);
-    const pagesRead = Math.max(0, latestPageRef.current - startPageRef.current);
-    if (mins >= 1 || pagesRead > 0) {
-      Alert.alert(
-        "Session Summary",
-        `Time: ${mins < 1 ? "< 1" : mins} min\nPages read: ${pagesRead}`,
-        [{ text: "OK", onPress: onClose }]
-      );
-    } else {
-      onClose?.();
-    }
-  }, [sessionStartTime, onClose]);
 
   /* ── Message handler ────────────────────────────── */
 
@@ -632,9 +514,6 @@ export default function ReaderScreen({
               await useLibraryStore.getState().loadLibrary();
             }
             break;
-          case "tap":
-            showAndReset();
-            break;
           case "caret":
             if (typeof msg.wordIndex === "number") {
               caretRef.current = nextCaretState(caretRef.current, {
@@ -649,13 +528,18 @@ export default function ReaderScreen({
             break;
           case "locationsGenerated":
             setTotalPages(msg.totalPages ?? 0);
+            // A freshly generated set is cached so the next open skips the work.
+            if (typeof msg.locations === "string") saveLocations(bookId, msg.locations);
             break;
           case "locationChanged":
+            cfiRef.current = msg.cfi ?? null;
+            setCfi(msg.cfi ?? null);
             setPercentage(msg.percentage ?? 0);
             setCurrentPage(msg.currentPage ?? 0);
             setChapterPage(msg.chapterPage ?? 0);
             setChapterPages(msg.chapterPages ?? 0);
             setChapter(msg.chapter ?? "");
+            chapterRef.current = msg.chapter ?? "";
             /* A caret picked in another chapter is meaningless here. Without
                this, an abandoned pick silently hijacked the next RSVP open. */
             caretRef.current = nextCaretState(caretRef.current, {
@@ -666,31 +550,23 @@ export default function ReaderScreen({
               startPageRef.current = msg.currentPage;
             }
             if (msg.cfi) {
-              saveProgressDebounced(
-                msg.cfi,
-                msg.percentage ?? 0,
-                msg.currentPage ?? 0
-              );
+              saveProgressSoon(msg.cfi, msg.percentage ?? 0, msg.currentPage ?? 0);
             }
             break;
           case "currentCfi": {
-            const cfi = msg.cfi;
-            if (cfi) {
-              if (rsvpMarkerRef.current) {
-                rsvpMarkerRef.current = false;
-                // The close-time seek has landed: normal reading resumes from
-                // here, so later progress writes may clear the pointer again.
-                rsvpSeekingRef.current = false;
-                // goToBlock has already moved the page; latestPageRef holds the
-                // number that arrived with it (state here is a render behind).
-                const page = latestPageRef.current || currentPage;
-                await addBookmark(bookId, cfi, "⚡ Speed reading", page || undefined);
-              } else {
-                await toggleBookmark(bookId, cfi, currentPage || undefined);
-              }
-              const updated = await getBookmarksForBook(bookId);
-              setBookmarks(updated);
-            }
+            /* Only the close-time seek of speed reading asks for this now. The
+               seek has landed: normal reading resumes from here, so later
+               progress writes may clear the pointer again. */
+            if (!rsvpMarkerRef.current) break;
+            rsvpMarkerRef.current = false;
+            rsvpSeekingRef.current = false;
+            if (!msg.cfi) break;
+            /* One marker per book: it says where speed reading last stopped,
+               so the previous one is replaced rather than piling up. */
+            const old = (await getBookmarksForBook(bookId)).filter((b) => b.label === RSVP_MARK);
+            await Promise.all(old.map((b) => deleteBookmark(b.id)));
+            await addBookmark(bookId, msg.cfi, RSVP_MARK, latestPageRef.current || undefined);
+            setBookmarks(await getBookmarksForBook(bookId));
             break;
           }
           case "chapterText": {
@@ -704,7 +580,7 @@ export default function ReaderScreen({
               advancingRef.current = false;
               setRsvpAdvancing(false);
               // Bank the finished chapter before its tokens are replaced.
-              rsvpWordsRef.current += rsvpTokens.length;
+              rsvpWordsRef.current += rsvpTokensRef.current.length;
             }
             if (msg.endOfBook) {
               advancingRef.current = false;
@@ -715,12 +591,11 @@ export default function ReaderScreen({
               setRsvpEndOfBook(true);
               break;
             }
-            const paragraphs: string[] = Array.isArray(msg.paragraphs)
-              ? msg.paragraphs
-              : [];
+            const paragraphs: string[] = Array.isArray(msg.paragraphs) ? msg.paragraphs : [];
             const tokens = tokenizeParagraphs(paragraphs);
+            rsvpTokensRef.current = tokens;
             setRsvpTokens(tokens);
-            setRsvpChapter(msg.chapter || chapter || "");
+            setRsvpChapter(msg.chapter || "");
             rsvpHrefRef.current = msg.href ?? null;
             if (msg.advanced) {
               /* Auto-advanced past a chapter end. The overlay remounts at word
@@ -729,106 +604,94 @@ export default function ReaderScreen({
               rsvpStartIdxRef.current = 0;
               const label =
                 msg.chapter ||
-                (typeof msg.spineIndex === "number"
-                  ? `Chapter ${msg.spineIndex}`
-                  : "");
+                (typeof msg.spineIndex === "number" ? `Chapter ${msg.spineIndex}` : "");
               setRsvpIntro(label || undefined);
               setRsvpEpoch((n) => n + 1);
               break;
             }
             // A normal open holds nothing: the reader chose to be here.
             setRsvpIntro(undefined);
-            /* If a caret start word was chosen for THIS chapter, begin there
-               and skip the resume prompt. Word 0 is a legitimate pick, so the
-               "was anything chosen" question is answered by null, not by 0. */
-            const caretStart = startIndexFor(
-              caretRef.current,
-              msg.href ?? null,
-              tokens.length
-            );
-            if (caretStart !== null) {
-              caretRef.current = nextCaretState(caretRef.current, {
-                type: "consumed",
-              });
-              rsvpStartIdxRef.current = caretStart;
-              setShowRsvp(true);
-              break;
-            }
-            // A pick that did not apply here is spent, not carried forward.
+            /* Where to start, most specific first:
+                 1. a word the reader picked with the caret in THIS chapter
+                    (word 0 is a legitimate pick, so "nothing picked" is null);
+                 2. the word speed reading last stopped on, if it is in this
+                    chapter and the reader has not paged away since;
+                 3. the first word of the page on screen.
+               None of them asks a question first. */
+            const caretStart = startIndexFor(caretRef.current, msg.href ?? null, tokens.length);
             caretRef.current = nextCaretState(caretRef.current, {
-              type: "abandoned",
+              type: caretStart !== null ? "consumed" : "abandoned",
             });
-            /* Resume only if the pointer belongs to THIS chapter and still
-               lands inside it. Matching on length alone would happily resume
-               40% into a different chapter that happened to be long enough. */
             const saved = rsvpStartIdxRef.current;
             const savedHref = savedRsvpHrefRef.current;
             const canResume =
-              saved > 0 &&
-              saved < tokens.length &&
-              (!savedHref || savedHref === msg.href);
-            if (canResume) {
-              const pct = Math.round((saved / tokens.length) * 100);
-              Alert.alert(
-                "Speed reading",
-                `Resume where you left off (${pct}% through this chapter) or start from the beginning?`,
-                [
-                  { text: "Start over", onPress: () => { rsvpStartIdxRef.current = 0; setShowRsvp(true); } },
-                  { text: "Resume", onPress: () => { rsvpStartIdxRef.current = saved; setShowRsvp(true); } },
-                ]
-              );
-            } else {
-              rsvpStartIdxRef.current = 0;
-              setShowRsvp(true);
-            }
-            break;
-          }
-          case "textSelected": {
-            if (msg.text && msg.cfiRange) {
-              await addHighlight(bookId, msg.cfiRange, msg.text);
-              const updated = await getHighlightsForBook(bookId);
-              setHighlights(updated);
-              inject("window.readerApi.clearSelection()");
-            }
+              saved > 0 && saved < tokens.length && (!savedHref || savedHref === msg.href);
+            const at = msg.pageStart as { block: number; word: number } | null;
+            const pageStart = at
+              ? tokens.findIndex(
+                  (tk) =>
+                    tk.paragraphIndex > at.block ||
+                    (tk.paragraphIndex === at.block && tk.sourceWord >= at.word)
+                )
+              : -1;
+            rsvpStartIdxRef.current =
+              caretStart !== null ? caretStart : canResume ? saved : Math.max(0, pageStart);
+            setShowRsvp(true);
             break;
           }
           case "error":
-            console.warn("Reader error:", msg.message);
+            setLoadError(typeof msg.message === "string" ? msg.message : "This book could not be opened.");
             break;
         }
       } catch {
         /* malformed message */
       }
     },
-    [saveProgressDebounced, showAndReset, bookId, currentPage, inject, chapter, rsvpTokens.length]
+    [saveProgressSoon, bookId, inject]
   );
 
   /* ── Derived values ─────────────────────────────── */
 
-  const theme      = settings.theme;
-  const barBg      = THEME_BAR_BG[theme];
-  const barBorder  = THEME_BAR_BORDER[theme];
-  const fg         = THEME_FG[theme];
-  const sub        = THEME_SUB[theme];
-  const accent     = THEME_ACCENT[theme];
-  const readingTime = readingTimeLabel(currentPage, totalPages);
   const insets = useSafeAreaInsets();
   const { width: winWidth } = useWindowDimensions();
+  /* Chrome follows the page: the app palette when the book does, otherwise
+     the named theme's own colours. */
+  const named = READER_THEMES[settings.theme];
+  const ui = settings.bg
+    ? {
+        bg: settings.bg,
+        fg: t.color.text.primary,
+        sub: t.color.text.tertiary,
+        accent: t.color.accent.base,
+        barBg: t.color.bg.raised,
+        barBorder: t.color.border.default,
+      }
+    : named;
+  const shownPct = seeking ? seekPct * 100 : Math.min(percentage, 100);
+  const pageLabel = currentPage && totalPages ? `${currentPage} / ${totalPages}` : "";
   const chapterLeft = chapterPages
     ? `${Math.max(0, chapterPages - chapterPage)} left in chapter`
     : "";
-
-  const fontSizeIdx   = useMemo(() => FONT_SIZES.indexOf(settings.fontSize), [settings.fontSize]);
-  const lineHeightIdx = useMemo(() => LINE_HEIGHTS.indexOf(settings.lineHeight), [settings.lineHeight]);
-  const marginIdx     = useMemo(() => MARGINS.indexOf(settings.marginWidth), [settings.marginWidth]);
+  const pctLabel = percentage > 0 ? `${percentage.toFixed(totalPages ? 1 : 0)}%` : "";
 
   /* ── Render ─────────────────────────────────────── */
 
+  if (loadError) {
+    return (
+      <View style={[s.root, s.errorRoot, { backgroundColor: ui.bg }]}>
+        <Text style={[s.errorTitle, { color: ui.fg }]}>Can&apos;t open this book</Text>
+        <Text style={[s.errorBody, { color: ui.sub }]}>{loadError}</Text>
+        <Pressable style={[s.errorBtn, { borderColor: ui.accent }]} onPress={onClose} accessibilityRole="button">
+          <Text style={[s.errorBtnText, { color: ui.accent }]}>Back to library</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
-    <View style={[s.root, { backgroundColor: THEME_BG[theme] }]}>
-      {/* WebView */}
+    <View style={[s.root, { backgroundColor: ui.bg }]}>
       {htmlReady && htmlRef.current && (
-        <WebView
+        <ReaderWebView
           ref={webViewRef}
           source={sourceUri ? { uri: sourceUri } : { html: htmlRef.current }}
           originWhitelist={["*"]}
@@ -848,17 +711,16 @@ export default function ReaderScreen({
 
       {/* Tap zones — reliable native layer. In-WebView tap detection did
           not fire on Android (epub.js iframe), so the RN overlay owns taps:
-          left third = back, right third = forward, middle = menu/options.
-          Sits above the WebView, below the control bars (which render later
-          and keep their own touch targets).
-          ponytail: overlay intercepts touches, so in-book long-press text
-          selection is superseded; add a toolbar "highlight" affordance if
-          selection is wanted back. */}
-      {/* Long-press + drag places a caret to pick the speed-reading start word;
-          a plain tap keeps the zone navigation (left/right/menu). */}
+          left third = back, right third = forward, middle = show or hide the
+          controls. Long-press + drag places a caret to pick the speed-reading
+          start word.
+          ponytail: this layer takes every touch, so text in the book cannot be
+          selected. Highlighting needs a selection path of its own before it
+          can come back. */}
       {htmlReady && !showRsvp && (
         <View
           style={StyleSheet.absoluteFill}
+          testID="reader-taps"
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
           onResponderGrant={(e) => {
@@ -913,12 +775,8 @@ export default function ReaderScreen({
               multiTouchRef.current
             );
             resetGesture();
-            if (action === "prev") prevPage();
-            else if (action === "next") nextPage();
-            else if (action === "menu") {
-              if (showControls) setShowControls(false);
-              else showAndReset();
-            }
+            if (action === "prev" || action === "next") turn(action);
+            else if (action === "menu") setChrome((c) => (c === "hidden" ? "bars" : "hidden"));
             // "none" → a multi-touch gesture; deliberately do nothing.
           }}
           onResponderTerminate={() => {
@@ -929,455 +787,142 @@ export default function ReaderScreen({
         />
       )}
 
-      {/* ── Always-on progress footer (hidden when full controls show) ── */}
-      {!showControls && !showSettings && !showToc && !showBookmarks && !showHighlights && (
+      {/* Always-on progress line, under the page while the controls are away */}
+      {chrome === "hidden" && (
         <View style={[s.footer, { paddingBottom: insets.bottom }]} pointerEvents="none">
-          <View style={[s.progressTrack, { backgroundColor: barBorder }]}>
-            <View
-              style={[
-                s.progressFill,
-                { backgroundColor: accent, width: `${Math.min(percentage, 100)}%` as `${number}%` },
-              ]}
-            />
+          <View style={[s.progressTrack, { backgroundColor: ui.barBorder }]}>
+            <View style={[s.progressFill, { backgroundColor: ui.accent, width: `${shownPct}%` as `${number}%` }]} />
           </View>
           <View style={s.statsRow}>
-            <Text style={[s.statText, { color: sub }]}>
-              {currentPage && totalPages ? `${currentPage} / ${totalPages}` : ""}
-            </Text>
-            <Text style={[s.statText, { color: sub }]}>{chapterLeft}</Text>
-            <Text style={[s.statText, { color: sub }]}>
-              {percentage > 0 ? `${percentage.toFixed(1)}%` : ""}
-            </Text>
+            <Text style={[s.statText, { color: ui.sub }]}>{pageLabel}</Text>
+            <Text style={[s.statText, { color: ui.sub }]}>{chapterLeft}</Text>
+            <Text style={[s.statText, { color: ui.sub }]}>{pctLabel}</Text>
           </View>
         </View>
       )}
 
-      {/* ── Top bar ──────────────────────────────── */}
-      {showControls && !showSettings && !showToc && !showBookmarks && !showHighlights && (
-        <SafeAreaView
-          style={[s.topBar, { backgroundColor: barBg, borderBottomColor: barBorder }]}
-          pointerEvents="box-none"
+      {/* After a jump: one tap back to where the reader was */}
+      {returnTo && chrome === "hidden" && !showRsvp && (
+        <Animated.View
+          entering={BAR_IN}
+          exiting={BAR_OUT}
+          style={[s.returnWrap, { bottom: insets.bottom + 44 }]}
         >
-          <View style={s.topBarInner} pointerEvents="auto">
-            <Pressable onPress={handleClose} style={s.barBtn} onPressIn={keepAlive}>
-              <Text style={[s.barBtnIcon, { color: fg }]}>←</Text>
-            </Pressable>
+          <Pressable
+            onPress={goBack}
+            style={[s.returnPill, { backgroundColor: ui.barBg, borderColor: ui.barBorder }]}
+            accessibilityRole="button"
+            testID="reader-return"
+          >
+            <IconSymbol name="arrow.counterclockwise" size={14} color={ui.accent} />
+            <Text style={[s.returnText, { color: ui.fg }]}>
+              {returnTo.page ? `Back to page ${returnTo.page}` : "Back to where you were"}
+            </Text>
+          </Pressable>
+        </Animated.View>
+      )}
 
-            <Text style={[s.chapterTitle, { color: fg }]} numberOfLines={1}>
+      {/* Top bar */}
+      {chrome === "bars" && (
+        <Animated.View
+          entering={BAR_IN}
+          exiting={BAR_OUT}
+          style={[s.topBar, { backgroundColor: ui.barBg, borderBottomColor: ui.barBorder, paddingTop: insets.top }]}
+        >
+          <View style={s.topBarInner}>
+            <Pressable onPress={onClose} style={s.barBtn} accessibilityRole="button" accessibilityLabel="Back to library" hitSlop={6}>
+              <IconSymbol name="chevron.left" size={24} color={ui.fg} />
+            </Pressable>
+            <Text style={[s.chapterTitle, { color: ui.fg }]} numberOfLines={1}>
               {chapter || title || ""}
             </Text>
-
             <Pressable
               onPress={handleToggleBookmark}
               style={s.barBtn}
-              onPressIn={keepAlive}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={isBookmarked ? "Remove bookmark" : "Bookmark this page"}
+              accessibilityState={{ selected: isBookmarked }}
+              testID="reader-bookmark"
             >
               <IconSymbol
-                name="bookmark.fill"
-                size={18}
-                color={fg}
+                name={isBookmarked ? "bookmark.fill" : "bookmark"}
+                size={22}
+                color={isBookmarked ? ui.accent : ui.fg}
               />
             </Pressable>
-
-            <Pressable
-              onPress={() => { clearHideTimer(); setShowToc(true); }}
-              style={s.barBtn}
-              onPressIn={keepAlive}
-            >
-              <Text style={[s.barBtnIcon, { color: fg }]}>☰</Text>
-            </Pressable>
           </View>
-        </SafeAreaView>
+        </Animated.View>
       )}
 
-      {/* ── Bottom bar ───────────────────────────── */}
-      {showControls && !showSettings && !showToc && !showBookmarks && !showHighlights && (
-        <SafeAreaView
-          style={[s.bottomBar, { backgroundColor: barBg, borderTopColor: barBorder }]}
-          pointerEvents="box-none"
+      {/* Bottom bar */}
+      {chrome === "bars" && (
+        <Animated.View
+          entering={BAR_IN}
+          exiting={BAR_OUT}
+          style={[s.bottomBar, { backgroundColor: ui.barBg, borderTopColor: ui.barBorder, paddingBottom: insets.bottom }]}
         >
-          <View pointerEvents="auto">
-            {/* Progress track — draggable to jump to any page */}
-            <View style={s.progressWrap}>
-              <View
-                style={s.seekHit}
-                onLayout={(e) => { seekWidthRef.current = e.nativeEvent.layout.width; }}
-                onStartShouldSetResponder={() => true}
-                onMoveShouldSetResponder={() => true}
-                onResponderGrant={(e) => { clearHideTimer(); setSeeking(true); onSeekTouch(e.nativeEvent.locationX); }}
-                onResponderMove={(e) => onSeekTouch(e.nativeEvent.locationX)}
-                onResponderRelease={commitSeek}
-                onResponderTerminate={commitSeek}
-              >
-                <View style={[s.progressTrack, { backgroundColor: barBorder }]}>
-                  <View
-                    style={[
-                      s.progressFill,
-                      { backgroundColor: accent, width: `${(seeking ? seekPct * 100 : Math.min(percentage, 100))}%` as `${number}%` },
-                    ]}
-                  />
-                </View>
-                <View
-                  style={[
-                    s.seekThumb,
-                    { backgroundColor: accent, left: `${(seeking ? seekPct * 100 : Math.min(percentage, 100))}%` as `${number}%` },
-                  ]}
-                />
+          {/* Progress track — draggable to jump to any page */}
+          <View style={s.progressWrap}>
+            <View
+              style={s.seekHit}
+              onLayout={(e) => { seekWidthRef.current = e.nativeEvent.layout.width; }}
+              onStartShouldSetResponder={() => true}
+              onMoveShouldSetResponder={() => true}
+              onResponderGrant={(e) => { setSeeking(true); onSeekTouch(e.nativeEvent.locationX); }}
+              onResponderMove={(e) => onSeekTouch(e.nativeEvent.locationX)}
+              onResponderRelease={commitSeek}
+              onResponderTerminate={commitSeek}
+              accessibilityRole="adjustable"
+              accessibilityLabel="Position in book"
+            >
+              <View style={[s.progressTrack, { backgroundColor: ui.barBorder }]}>
+                <View style={[s.progressFill, { backgroundColor: ui.accent, width: `${shownPct}%` as `${number}%` }]} />
               </View>
-            </View>
-
-            {/* Stats row */}
-            <View style={s.statsRow}>
-              <Text style={[s.statText, { color: sub }]}>
-                {seeking && totalPages
-                  ? `→ ${Math.max(1, Math.round(seekPct * totalPages))} / ${totalPages}`
-                  : currentPage && totalPages ? `${currentPage} / ${totalPages}` : ""}
-              </Text>
-              <Text style={[s.statText, { color: sub }]}>{chapterLeft || readingTime}</Text>
-              <Text style={[s.statText, { color: sub }]}>
-                {percentage > 0 ? `${percentage.toFixed(1)}%` : ""}
-              </Text>
-            </View>
-
-            {/* Controls row */}
-            <View style={s.controlRow}>
-              <Pressable onPress={prevPage} style={s.navBtn} onPressIn={keepAlive}>
-                <Text style={[s.navBtnText, { color: fg }]}>‹</Text>
-              </Pressable>
-
-              <Pressable onPress={openSettings} style={s.settingsBtn} onPressIn={keepAlive}>
-                <Text style={[s.settingsBtnText, { color: accent }]}>Aa</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => { clearHideTimer(); setShowHighlights(true); }}
-                style={s.barBtn}
-                onPressIn={keepAlive}
-              >
-                <IconSymbol name="highlighter" size={18} color={accent} />
-                {highlights.length > 0 && (
-                  <View style={s.badge}>
-                    <Text style={s.badgeText}>{highlights.length}</Text>
-                  </View>
-                )}
-              </Pressable>
-
-              <Pressable
-                onPress={openRsvp}
-                style={s.speedBtn}
-                onPressIn={keepAlive}
-                accessibilityLabel="Speed read this chapter"
-              >
-                <IconSymbol name="bolt.fill" size={20} color={accent} />
-              </Pressable>
-
-              <Pressable onPress={nextPage} style={s.navBtn} onPressIn={keepAlive}>
-                <Text style={[s.navBtnText, { color: fg }]}>›</Text>
-              </Pressable>
+              <View style={[s.seekThumb, { backgroundColor: ui.accent, left: `${shownPct}%` as `${number}%` }]} />
             </View>
           </View>
-        </SafeAreaView>
+          <View style={s.statsRow}>
+            <Text style={[s.statText, { color: ui.sub }]}>
+              {seeking && totalPages
+                ? `→ ${Math.max(1, Math.round(seekPct * totalPages))} / ${totalPages}`
+                : pageLabel}
+            </Text>
+            <Text style={[s.statText, { color: ui.sub }]}>
+              {chapterLeft || minutesLeftLabel(currentPage, totalPages)}
+            </Text>
+            <Text style={[s.statText, { color: ui.sub }]}>{pctLabel}</Text>
+          </View>
+
+          <View style={s.actionRow}>
+            <BarAction icon="list.bullet" label="Contents" color={ui.fg} onPress={() => setChrome("contents")} />
+            <BarAction icon="textformat.size" label="Appearance" color={ui.fg} onPress={() => setChrome("appearance")} />
+            <BarAction icon="bolt.fill" label="Speed read" color={ui.accent} onPress={openRsvp} />
+          </View>
+        </Animated.View>
       )}
 
-      {/* ── Settings sheet ───────────────────────── */}
-      {showSettings && (
-        <>
-          <Pressable
-            style={[StyleSheet.absoluteFill, s.settingsOverlay]}
-            onPress={closeSettings}
-          />
-          <Animated.View
-            style={[s.settingsSheet, { transform: [{ translateY: sheetTranslateY }] }]}
-          >
-            {/* Handle */}
-            <View style={s.sheetHandle} />
-
-            {/* Header */}
-            <View style={s.sheetHeader}>
-              <Text style={s.sheetTitle}>Reading Settings</Text>
-              <Pressable onPress={closeSettings} style={s.sheetCloseBtn}>
-                <Text style={s.sheetCloseBtnText}>✕</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-              style={s.sheetScroll}
-              contentContainerStyle={s.sheetScrollContent}
-            >
-              {/* Themes */}
-              <Text style={s.sheetSectionLabel}>Theme</Text>
-              <View style={s.themeRow}>
-                {THEMES_ORDER.map((th) => {
-                  const active = settings.theme === th;
-                  return (
-                    <Pressable
-                      key={th}
-                      style={[
-                        s.themeSwatch,
-                        { backgroundColor: THEME_SWATCHES[th] },
-                        active && s.themeSwatchActive,
-                      ]}
-                      onPress={() => updateSettings({ theme: th })}
-                    >
-                      {active && (
-                        <View style={s.themeCheck}>
-                          <Text style={s.themeCheckMark}>✓</Text>
-                        </View>
-                      )}
-                      <Text
-                        style={[
-                          s.themeSwatchLabel,
-                          { color: THEME_FG[th] },
-                        ]}
-                      >
-                        {THEME_LABEL[th]}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {/* Fonts */}
-              <Text style={s.sheetSectionLabel}>Font</Text>
-              <View style={s.fontRow}>
-                {FONTS_ORDER.map((f) => {
-                  const active = settings.font === f;
-                  return (
-                    <Pressable
-                      key={f}
-                      style={[s.fontPill, active && s.fontPillActive]}
-                      onPress={() => updateSettings({ font: f })}
-                    >
-                      <Text style={[s.fontPillText, active && s.fontPillTextActive]}>
-                        {FONT_LABEL[f]}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {/* Font size */}
-              <SettingRow
-                label="Font Size"
-                value={`${settings.fontSize}px`}
-                onDecrement={() => {
-                  if (fontSizeIdx > 0)
-                    updateSettings({ fontSize: FONT_SIZES[fontSizeIdx - 1] });
-                }}
-                onIncrement={() => {
-                  if (fontSizeIdx < FONT_SIZES.length - 1)
-                    updateSettings({ fontSize: FONT_SIZES[fontSizeIdx + 1] });
-                }}
-                canDecrement={fontSizeIdx > 0}
-                canIncrement={fontSizeIdx < FONT_SIZES.length - 1}
-                decrementLabel="A−"
-                incrementLabel="A+"
-              />
-
-              {/* Line height */}
-              <SettingRow
-                label="Line Spacing"
-                value={settings.lineHeight.toFixed(1)}
-                onDecrement={() => {
-                  if (lineHeightIdx > 0)
-                    updateSettings({ lineHeight: LINE_HEIGHTS[lineHeightIdx - 1] });
-                }}
-                onIncrement={() => {
-                  if (lineHeightIdx < LINE_HEIGHTS.length - 1)
-                    updateSettings({ lineHeight: LINE_HEIGHTS[lineHeightIdx + 1] });
-                }}
-                canDecrement={lineHeightIdx > 0}
-                canIncrement={lineHeightIdx < LINE_HEIGHTS.length - 1}
-                decrementLabel="−"
-                incrementLabel="+"
-              />
-
-              {/* Margins */}
-              <SettingRow
-                label="Margins"
-                value={`${settings.marginWidth}px`}
-                onDecrement={() => {
-                  if (marginIdx > 0)
-                    updateSettings({ marginWidth: MARGINS[marginIdx - 1] });
-                }}
-                onIncrement={() => {
-                  if (marginIdx < MARGINS.length - 1)
-                    updateSettings({ marginWidth: MARGINS[marginIdx + 1] });
-                }}
-                canDecrement={marginIdx > 0}
-                canIncrement={marginIdx < MARGINS.length - 1}
-                decrementLabel="−"
-                incrementLabel="+"
-              />
-            </ScrollView>
-          </Animated.View>
-        </>
+      {chrome === "appearance" && (
+        <AppearanceSheet
+          settings={settings}
+          appPalette={appPalette()}
+          onChange={updateSettings}
+          onClose={() => setChrome("hidden")}
+        />
       )}
 
-      {/* ── TOC overlay ──────────────────────────── */}
-      {showToc && (
-        <View style={StyleSheet.absoluteFill}>
-          <Pressable
-            style={[StyleSheet.absoluteFill, s.tocOverlay]}
-            onPress={() => { setShowToc(false); showAndReset(); }}
-          />
-          <SafeAreaView style={s.tocContainer} pointerEvents="box-none">
-            <View style={s.tocSheet} pointerEvents="auto">
-              <View style={s.tocHeader}>
-                <Text style={s.tocTitle}>Contents</Text>
-                <Pressable
-                  onPress={() => { setShowToc(false); showAndReset(); }}
-                  style={s.tocCloseBtn}
-                >
-                  <Text style={s.tocCloseBtnText}>✕</Text>
-                </Pressable>
-              </View>
-
-              {toc.length === 0 ? (
-                <View style={s.tocEmpty}>
-                  <Text style={s.tocEmptyText}>No table of contents available</Text>
-                </View>
-              ) : (
-                <ScrollView
-                  style={s.tocScroll}
-                  showsVerticalScrollIndicator={false}
-                  bounces
-                >
-                  {toc.map((item) => (
-                    <Pressable
-                      key={item.id}
-                      onPress={() => goToChapter(item.href)}
-                      style={({ pressed }) => [
-                        s.tocItem,
-                        { paddingLeft: t.space._5 + item.level * t.space._4 },
-                        pressed && s.tocItemPressed,
-                      ]}
-                    >
-                      <Text
-                        style={[s.tocItemText, item.level > 0 && s.tocItemNested]}
-                        numberOfLines={2}
-                      >
-                        {item.label}
-                      </Text>
-                      <Text style={s.tocItemChevron}>›</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              )}
-            </View>
-          </SafeAreaView>
-        </View>
+      {chrome === "contents" && (
+        <ContentsSheet
+          toc={toc}
+          bookmarks={bookmarks}
+          currentChapter={chapter}
+          onGoToChapter={(href) => jump(`window.readerApi.goToChapter(${JSON.stringify(href)})`)}
+          onGoToBookmark={(at) => jump(`window.readerApi.goToCfi(${JSON.stringify(at)})`)}
+          onDeleteBookmark={handleDeleteBookmark}
+          onClose={() => setChrome("hidden")}
+        />
       )}
 
-      {/* ── Bookmarks overlay ──────────────────────── */}
-      {showBookmarks && (
-        <View style={StyleSheet.absoluteFill}>
-          <Pressable
-            style={[StyleSheet.absoluteFill, s.tocOverlay]}
-            onPress={() => { setShowBookmarks(false); showAndReset(); }}
-          />
-          <SafeAreaView style={s.tocContainer} pointerEvents="box-none">
-            <View style={s.tocSheet} pointerEvents="auto">
-              <View style={s.tocHeader}>
-                <Text style={s.tocTitle}>Bookmarks</Text>
-                <Pressable
-                  onPress={() => { setShowBookmarks(false); showAndReset(); }}
-                  style={s.tocCloseBtn}
-                >
-                  <Text style={s.tocCloseBtnText}>✕</Text>
-                </Pressable>
-              </View>
-              {bookmarks.length === 0 ? (
-                <View style={s.tocEmpty}>
-                  <Text style={s.tocEmptyText}>No bookmarks yet</Text>
-                </View>
-              ) : (
-                <ScrollView style={s.tocScroll} showsVerticalScrollIndicator={false}>
-                  {bookmarks.map((bm) => (
-                    <Pressable
-                      key={bm.id}
-                      onPress={() => {
-                        inject(`window.readerApi.goToCfi(${JSON.stringify(bm.cfi)})`);
-                        setShowBookmarks(false);
-                        showAndReset();
-                      }}
-                      style={({ pressed }) => [s.tocItem, pressed && s.tocItemPressed]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.tocItemText}>
-                          {bm.label || `Page ${bm.page_number || "?"}`}
-                        </Text>
-                        <Text style={[s.statText, { color: THEME_SUB[theme] }]}>
-                          {new Date(bm.created_at).toLocaleDateString()}
-                        </Text>
-                      </View>
-                      <Text style={s.tocItemChevron}>›</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              )}
-            </View>
-          </SafeAreaView>
-        </View>
-      )}
-
-      {/* ── Highlights overlay ─────────────────────── */}
-      {showHighlights && (
-        <View style={StyleSheet.absoluteFill}>
-          <Pressable
-            style={[StyleSheet.absoluteFill, s.tocOverlay]}
-            onPress={() => { setShowHighlights(false); showAndReset(); }}
-          />
-          <SafeAreaView style={s.tocContainer} pointerEvents="box-none">
-            <View style={s.tocSheet} pointerEvents="auto">
-              <View style={s.tocHeader}>
-                <Text style={s.tocTitle}>Highlights</Text>
-                <Pressable
-                  onPress={() => { setShowHighlights(false); showAndReset(); }}
-                  style={s.tocCloseBtn}
-                >
-                  <Text style={s.tocCloseBtnText}>✕</Text>
-                </Pressable>
-              </View>
-              {highlights.length === 0 ? (
-                <View style={s.tocEmpty}>
-                  <Text style={s.tocEmptyText}>Select text while reading to highlight</Text>
-                </View>
-              ) : (
-                <ScrollView style={s.tocScroll} showsVerticalScrollIndicator={false}>
-                  {highlights.map((hl) => (
-                    <Pressable
-                      key={hl.id}
-                      onPress={() => {
-                        inject(`window.readerApi.goToCfi(${JSON.stringify(hl.cfi_range)})`);
-                        setShowHighlights(false);
-                        showAndReset();
-                      }}
-                      style={({ pressed }) => [s.highlightItem, pressed && s.tocItemPressed]}
-                    >
-                      <View style={[s.highlightDot, { backgroundColor: hl.color }]} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.highlightText} numberOfLines={3}>
-                          &ldquo;{hl.text}&rdquo;
-                        </Text>
-                        {hl.note && (
-                          <Text style={s.highlightNote} numberOfLines={1}>
-                            {hl.note}
-                          </Text>
-                        )}
-                      </View>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              )}
-            </View>
-          </SafeAreaView>
-        </View>
-      )}
-
-      {/* ── RSVP speed-reading overlay ─────────────── */}
       {showRsvp && (
         <RsvpOverlay
           key={rsvpEpoch}
@@ -1407,66 +952,42 @@ export default function ReaderScreen({
   );
 }
 
-/* ── Setting row helper ─────────────────────────────── */
-
-function SettingRow({
-  label,
-  value,
-  onDecrement,
-  onIncrement,
-  canDecrement,
-  canIncrement,
-  decrementLabel,
-  incrementLabel,
+function BarAction({
+  icon, label, color, onPress,
 }: {
-  label:          string;
-  value:          string;
-  onDecrement:    () => void;
-  onIncrement:    () => void;
-  canDecrement:   boolean;
-  canIncrement:   boolean;
-  decrementLabel: string;
-  incrementLabel: string;
+  icon: React.ComponentProps<typeof IconSymbol>["name"];
+  label: string;
+  color: string;
+  onPress: () => void;
 }) {
   return (
-    <View style={s.settingRow}>
-      <Text style={s.settingRowLabel}>{label}</Text>
-      <View style={s.settingRowControl}>
-        <Pressable
-          onPress={onDecrement}
-          disabled={!canDecrement}
-          style={[s.stepBtn, !canDecrement && s.stepBtnDisabled]}
-        >
-          <Text style={[s.stepBtnText, !canDecrement && s.stepBtnTextDisabled]}>
-            {decrementLabel}
-          </Text>
-        </Pressable>
-        <Text style={s.settingRowValue}>{value}</Text>
-        <Pressable
-          onPress={onIncrement}
-          disabled={!canIncrement}
-          style={[s.stepBtn, !canIncrement && s.stepBtnDisabled]}
-        >
-          <Text style={[s.stepBtnText, !canIncrement && s.stepBtnTextDisabled]}>
-            {incrementLabel}
-          </Text>
-        </Pressable>
-      </View>
-    </View>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [s.action, pressed && s.actionPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <IconSymbol name={icon} size={22} color={color} />
+      <Text style={[s.actionLabel, { color }]}>{label}</Text>
+    </Pressable>
   );
 }
 
-/* ── Styles ─────────────────────────────────────────── */
-
 const s = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  webView: {
-    flex: 1,
-  },
+  root: { flex: 1 },
+  webView: { flex: 1 },
 
-  /* top bar */
+  errorRoot: { alignItems: "center", justifyContent: "center", padding: t.space._8 },
+  errorTitle: { ...t.font.title, marginBottom: t.space._2, textAlign: "center" },
+  errorBody: { ...t.font.body, textAlign: "center", lineHeight: 22, marginBottom: t.space._6 },
+  errorBtn: {
+    borderWidth: 1.5,
+    borderRadius: t.radius["2xl"],
+    paddingHorizontal: t.space._6,
+    paddingVertical: t.space._3,
+  },
+  errorBtnText: { fontSize: 15, fontWeight: "700" },
+
   topBar: {
     position: "absolute",
     top: 0,
@@ -1477,18 +998,10 @@ const s = StyleSheet.create({
   topBarInner: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: t.space._4,
-    paddingVertical: t.space._3,
+    paddingHorizontal: t.space._3,
+    paddingVertical: t.space._2,
   },
-  barBtn: {
-    padding: t.space._2,
-    minWidth: 40,
-    alignItems: "center",
-  },
-  barBtnIcon: {
-    fontSize: 20,
-    fontWeight: "400",
-  },
+  barBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   chapterTitle: {
     flex: 1,
     fontSize: 14,
@@ -1497,7 +1010,6 @@ const s = StyleSheet.create({
     marginHorizontal: t.space._2,
   },
 
-  /* bottom bar */
   bottomBar: {
     position: "absolute",
     bottom: 0,
@@ -1514,15 +1026,9 @@ const s = StyleSheet.create({
     paddingHorizontal: t.space._5,
     paddingTop: t.space._2,
   },
-  progressWrap: {
-    paddingHorizontal: t.space._5,
-    paddingTop: t.space._3,
-  },
+  progressWrap: { paddingHorizontal: t.space._5, paddingTop: t.space._2 },
   /* generous vertical grab area around the thin visual track */
-  seekHit: {
-    justifyContent: "center",
-    paddingVertical: 12,
-  },
+  seekHit: { justifyContent: "center", paddingVertical: 14 },
   seekThumb: {
     position: "absolute",
     top: "50%",
@@ -1532,358 +1038,45 @@ const s = StyleSheet.create({
     marginTop: -7,
     marginLeft: -7,
   },
-  progressTrack: {
-    height: 3,
-    borderRadius: 1.5,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: 3,
-    borderRadius: 1.5,
-  },
+  progressTrack: { height: 3, borderRadius: 1.5, overflow: "hidden" },
+  progressFill: { height: 3, borderRadius: 1.5 },
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: t.space._5,
-    paddingTop: 4,
+    paddingTop: 2,
+    paddingBottom: 4,
   },
-  statText: {
-    fontSize: 11,
-    fontWeight: "500",
-  },
-  controlRow: {
+  statText: { fontSize: 11, fontWeight: "500" },
+
+  actionRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-around",
     paddingHorizontal: t.space._4,
-    paddingVertical: t.space._3,
-    gap: 28,
+    paddingTop: t.space._2,
+    paddingBottom: t.space._3,
   },
-  speedBtn: {
-    padding: t.space._2,
-    minWidth: 40,
+  action: {
+    minWidth: 88,
+    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
-  },
-  navBtn: {
-    padding: t.space._2,
-    minWidth: 44,
-    alignItems: "center",
-  },
-  navBtnText: {
-    fontSize: 28,
-    fontWeight: "300",
-    lineHeight: 32,
-  },
-  settingsBtn: {
-    paddingHorizontal: t.space._5,
-    paddingVertical: t.space._2,
-    borderRadius: t.radius["2xl"],
-    backgroundColor: t.color.accent.bg,
-    borderWidth: 1,
-    borderColor: t.color.accent.border,
-  },
-  settingsBtnText: {
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-
-  /* settings sheet */
-  settingsOverlay: {
-    backgroundColor: "rgba(0,0,0,0.38)",
-  },
-  settingsSheet: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: SHEET_HEIGHT,
-    backgroundColor: t.color.bg.base,
-    borderTopLeftRadius: t.radius["4xl"],
-    borderTopRightRadius: t.radius["4xl"],
-    ...t.shadow.heavy,
-    paddingBottom: Platform.OS === "ios" ? 24 : t.space._4,
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: t.color.border.default,
-    alignSelf: "center",
-    marginTop: t.space._3,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: t.space._5,
-    paddingVertical: t.space._3,
-  },
-  sheetTitle: {
-    ...t.font.headline,
-  },
-  sheetCloseBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: t.color.bg.overlay,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sheetCloseBtnText: {
-    color: t.color.text.secondary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  sheetScroll: {
-    flex: 1,
-  },
-  sheetScrollContent: {
-    paddingHorizontal: t.space._5,
-    paddingBottom: t.space._4,
-  },
-  sheetSectionLabel: {
-    ...t.font.label,
-    marginBottom: t.space._2,
-    marginTop: t.space._4,
-  },
-
-  /* theme swatches */
-  themeRow: {
-    flexDirection: "row",
-    gap: t.space._3,
-  },
-  themeSwatch: {
-    flex: 1,
-    height: 64,
     borderRadius: t.radius.xl,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    paddingBottom: 8,
-    borderWidth: 1.5,
-    borderColor: t.color.border.default,
+    paddingHorizontal: t.space._3,
   },
-  themeSwatchActive: {
-    borderColor: t.color.accent.base,
-    borderWidth: 2,
-  },
-  themeSwatchLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  themeCheck: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: t.color.accent.base,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  themeCheckMark: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "800",
-  },
+  actionPressed: { opacity: 0.6 },
+  actionLabel: { fontSize: 11, fontWeight: "600", marginTop: 3 },
 
-  /* font pills */
-  fontRow: {
+  returnWrap: { position: "absolute", left: t.space._4 },
+  returnPill: {
     flexDirection: "row",
+    alignItems: "center",
     gap: t.space._2,
-  },
-  fontPill: {
-    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: t.radius.pill,
+    paddingHorizontal: t.space._4,
     paddingVertical: t.space._2,
-    borderRadius: t.radius.xl,
-    alignItems: "center",
-    backgroundColor: t.color.bg.raised,
-    borderWidth: 1,
-    borderColor: t.color.border.default,
+    ...t.shadow.soft,
   },
-  fontPillActive: {
-    backgroundColor: t.color.accent.bgStrong,
-    borderColor: t.color.accent.border,
-  },
-  fontPillText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: t.color.text.secondary,
-  },
-  fontPillTextActive: {
-    color: t.color.accent.strong,
-    fontWeight: "700",
-  },
-
-  /* setting rows */
-  settingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: t.space._3,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: t.color.border.subtle,
-  },
-  settingRowLabel: {
-    ...t.font.body,
-    flex: 1,
-  },
-  settingRowControl: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: t.space._3,
-  },
-  settingRowValue: {
-    ...t.font.body,
-    color: t.color.text.tertiary,
-    minWidth: 48,
-    textAlign: "center",
-  },
-  stepBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: t.radius.xl,
-    backgroundColor: t.color.bg.raised,
-    borderWidth: 1,
-    borderColor: t.color.border.default,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepBtnDisabled: {
-    opacity: 0.35,
-  },
-  stepBtnText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: t.color.text.primary,
-  },
-  stepBtnTextDisabled: {
-    color: t.color.text.faint,
-  },
-
-  /* TOC */
-  tocOverlay: {
-    backgroundColor: "rgba(30,53,72,0.55)",
-  },
-  tocContainer: {
-    flex: 1,
-    margin: t.space._4,
-  },
-  tocSheet: {
-    flex: 1,
-    backgroundColor: t.color.bg.base,
-    borderRadius: t.radius["3xl"],
-    overflow: "hidden",
-    ...t.shadow.heavy,
-  },
-  tocHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: t.space._5,
-    paddingVertical: t.space._4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: t.color.border.default,
-  },
-  tocTitle: {
-    ...t.font.title,
-  },
-  tocCloseBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: t.color.bg.overlay,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tocCloseBtnText: {
-    color: t.color.text.secondary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  tocEmpty: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: t.space._8,
-  },
-  tocEmptyText: {
-    ...t.font.body,
-    color: t.color.text.tertiary,
-  },
-  tocScroll: {
-    flex: 1,
-  },
-  tocItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: t.space._5,
-    paddingVertical: t.space._4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: t.color.border.subtle,
-  },
-  tocItemPressed: {
-    backgroundColor: t.color.bg.raised,
-  },
-  tocItemText: {
-    flex: 1,
-    ...t.font.body,
-    lineHeight: 20,
-  },
-  tocItemNested: {
-    color: t.color.text.tertiary,
-    fontSize: 14,
-  },
-  tocItemChevron: {
-    color: t.color.text.faint,
-    fontSize: 20,
-    fontWeight: "300",
-    marginLeft: t.space._2,
-  },
-
-  /* highlights & bookmarks */
-  badge: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    backgroundColor: t.color.accent.base,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 3,
-  },
-  badgeText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "800",
-  },
-  highlightItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: t.space._5,
-    paddingVertical: t.space._4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: t.color.border.subtle,
-    gap: t.space._3,
-  },
-  highlightDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 5,
-  },
-  highlightText: {
-    ...t.font.body,
-    fontStyle: "italic",
-    lineHeight: 20,
-  },
-  highlightNote: {
-    ...t.font.caption,
-    color: t.color.text.tertiary,
-    marginTop: t.space._1,
-  },
+  returnText: { fontSize: 13, fontWeight: "600" },
 });

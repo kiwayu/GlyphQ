@@ -5,6 +5,8 @@
  * Maestro journey for this is deferred — see TODOS.md #4).
  */
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { AccessibilityInfo, StyleSheet } from "react-native";
+import { getAnimatedStyle } from "react-native-reanimated";
 import RsvpOverlay from "../RsvpOverlay";
 import { tokenizeParagraphs } from "../engine";
 
@@ -17,8 +19,9 @@ const colors = {
   border: "#ddd",
 };
 
-// "alpha beta gamma delta" at 300 WPM => 200ms per plain word.
-// "delta" is the paragraph end (2.8x). cumEnd ≈ [200, 400, 600, 1160].
+// "alpha beta gamma delta" at 300 WPM averages 200ms a word: 800ms in all.
+// "delta" is the paragraph end and holds 2.8x as long as a plain word, so a
+// plain word lasts 800 / 5.8 ≈ 138ms. cumEnd ≈ [138, 276, 414, 800].
 const tokens = tokenizeParagraphs(["alpha beta gamma delta"]);
 
 let clock = 0;
@@ -27,7 +30,22 @@ let rafCbs: FrameRequestCallback[] = [];
 beforeEach(() => {
   clock = 0;
   rafCbs = [];
+  // Reanimated hands work to its UI runtime with setTimeout(0) under jest.
+  // Faking only the timer queue lets each frame below run it in step with the
+  // clock, while Date, performance and rAF stay under this file's control.
+  jest.useFakeTimers({
+    doNotFake: [
+      "Date",
+      "performance",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+      "nextTick",
+      "queueMicrotask",
+    ],
+  });
   jest.spyOn(Date, "now").mockImplementation(() => clock);
+  // Reanimated stamps animation starts with performance.now().
+  jest.spyOn(performance, "now").mockImplementation(() => clock);
   global.requestAnimationFrame = ((cb: FrameRequestCallback) => {
     rafCbs.push(cb);
     return rafCbs.length;
@@ -35,14 +53,38 @@ beforeEach(() => {
   global.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
 });
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.clearAllTimers();
+  jest.useRealTimers();
+  jest.restoreAllMocks();
+});
 
 function flushFrame() {
   const cbs = rafCbs;
   rafCbs = [];
   act(() => {
+    jest.runOnlyPendingTimers();
     cbs.forEach((cb) => cb(clock));
+    jest.runOnlyPendingTimers();
   });
+}
+
+/** Run the frame loop for `ms`, one 16ms frame at a time. */
+function advance(ms: number) {
+  const end = clock + ms;
+  while (clock < end) {
+    clock = Math.min(end, clock + 16);
+    flushFrame();
+  }
+}
+
+/** Opacity the reader sees on a view, as Reanimated last set it. */
+function opacity(r: ReactTestRenderer, testID: string): number {
+  const host = r.root.find(
+    (n) => n.props.testID === testID && typeof n.type === "string"
+  );
+  const o = getAnimatedStyle(host).opacity;
+  return typeof o === "number" ? o : 1;
 }
 
 function word(r: ReactTestRenderer): string {
@@ -87,15 +129,15 @@ describe("RsvpOverlay", () => {
     press(r, "rsvp-playpause"); // start playing from index 0
     expect(word(r)).toBe("alpha");
 
-    clock = 210; // past word 0's 200ms end
+    clock = 140; // past word 0's 138ms end
     flushFrame();
     expect(word(r)).toBe("beta");
 
-    clock = 410; // past word 1
+    clock = 280; // past word 1
     flushFrame();
     expect(word(r)).toBe("gamma");
 
-    clock = 610; // past word 2
+    clock = 420; // past word 2
     flushFrame();
     expect(word(r)).toBe("delta");
   });
@@ -131,7 +173,7 @@ describe("RsvpOverlay", () => {
     });
 
     press(r, "rsvp-playpause");
-    clock = 410;
+    clock = 300;
     flushFrame(); // now on "gamma" (index 2)
     press(r, "rsvp-close");
 
@@ -154,7 +196,7 @@ describe("RsvpOverlay", () => {
     });
 
     press(r, "rsvp-playpause");
-    clock = 1200; // past "delta"'s paragraph-end pause (cumEnd ≈ 1160)
+    clock = 810; // past "delta"'s paragraph-end pause (cumEnd = 800)
     flushFrame();
     expect(onFinish).toHaveBeenCalledTimes(1);
 
@@ -282,6 +324,235 @@ describe("RsvpOverlay", () => {
     expect(slot(r)).toBe("You finished Dune");
     press(r, "rsvp-back-chapter");
     expect(onBackToChapter).toHaveBeenCalled();
+  });
+
+  /* ── sentence stepping ─────────────────────────────── */
+
+  // [One two.] [Three four five.] [Six seven] (paragraph end) [Eight nine.]
+  const prose = tokenizeParagraphs(["One two. Three four five. Six seven", "Eight nine."]);
+  const at = (w: string) => prose.findIndex((t) => t.word === w);
+
+  function pressLabel(r: ReactTestRenderer, label: string) {
+    act(() => {
+      r.root.findByProps({ accessibilityLabel: label }).props.onPress();
+    });
+  }
+
+  function mountProse(startIndex: number) {
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={prose}
+          initialWpm={300}
+          startIndex={startIndex}
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    return r;
+  }
+
+  it("« restarts the current sentence, then steps back a sentence at a time", () => {
+    const r = mountProse(at("four"));
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("Three");
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("One");
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("One");
+  });
+
+  it("» jumps to the next sentence, across a paragraph end, and stops at the last word", () => {
+    const r = mountProse(at("One"));
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("Three");
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("Six");
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("Eight");
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("nine.");
+  });
+
+  it("keeps playing from the sentence start after «", () => {
+    const r = mountProse(at("Three"));
+    press(r, "rsvp-playpause");
+    // 9 words averaging 200ms = 1800ms; their multipliers sum to 15, so a
+    // plain word lasts 120ms: Three [0,120) four [120,240) five. [240,504).
+    clock = 300;
+    flushFrame();
+    expect(word(r)).toBe("five.");
+
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("Three");
+    clock = 410; // 110ms after the press
+    flushFrame();
+    expect(word(r)).toBe("Three"); // the clock restarted at the sentence start
+    clock = 430; // 130ms after
+    flushFrame();
+    expect(word(r)).toBe("four"); // and playback carried on from there
+  });
+
+  /* ── sentence on pause ─────────────────────────────── */
+
+  function textOf(node: { children: unknown[] }): string {
+    return node.children
+      .map((c) => (typeof c === "string" ? c : textOf(c as { children: unknown[] })))
+      .join("");
+  }
+
+  function sentenceBox(r: ReactTestRenderer) {
+    return r.root.find(
+      (n) => n.props.testID === "rsvp-sentence" && typeof n.type === "string"
+    );
+  }
+
+  /** The sentence as shown, and which part of it is in the main colour. */
+  function sentence(r: ReactTestRenderer) {
+    const box = sentenceBox(r);
+    const highlighted = box
+      .findAll(
+        (n) =>
+          typeof n.type === "string" &&
+          StyleSheet.flatten(n.props.style)?.color === colors.fg
+      )
+      .map(textOf);
+    return { text: textOf(box), highlighted };
+  }
+
+  it("shows the current sentence under the word while paused", () => {
+    const r = mountProse(at("four"));
+    expect(sentence(r)).toEqual({
+      text: "Three four five.",
+      highlighted: ["four"],
+    });
+    expect(opacity(r, "rsvp-sentence")).toBe(1);
+  });
+
+  it("fades the sentence out while playing and back in, on the new word, when paused", () => {
+    const r = mountProse(at("Three"));
+    press(r, "rsvp-playpause");
+    advance(70); // mid-fade
+    expect(opacity(r, "rsvp-sentence")).toBeGreaterThan(0);
+    expect(opacity(r, "rsvp-sentence")).toBeLessThan(1);
+    advance(100); // 170ms in: faded out, now on "four" (plain words last 120ms)
+    expect(opacity(r, "rsvp-sentence")).toBe(0);
+    expect(word(r)).toBe("four");
+
+    press(r, "rsvp-playpause"); // pause on "four"
+    expect(sentence(r).highlighted).toEqual(["four"]);
+    advance(160);
+    expect(opacity(r, "rsvp-sentence")).toBe(1);
+  });
+
+  it("keeps the sentence's space while hidden, so the focus word never moves", () => {
+    const r = mountProse(at("Three"));
+    const layout = () => {
+      const { opacity: _o, ...rest } = StyleSheet.flatten(sentenceBox(r).props.style);
+      return rest;
+    };
+    const paused = layout();
+    expect(paused.height).toBeGreaterThan(0);
+    press(r, "rsvp-playpause");
+    advance(200);
+    expect(opacity(r, "rsvp-sentence")).toBe(0);
+    expect(layout()).toEqual(paused);
+  });
+
+  it("joins em-dash halves back into one word", () => {
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={tokenizeParagraphs(["It was war—peace again."])}
+          initialWpm={300}
+          startIndex={3}
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    expect(sentence(r)).toEqual({
+      text: "It was war—peace again.",
+      highlighted: ["peace"],
+    });
+  });
+
+  it("cuts a long sentence to a window that keeps the current word in view", () => {
+    const words = Array.from({ length: 60 }, (_, i) => `w${i}`);
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={tokenizeParagraphs([words.join(" ") + "."])}
+          initialWpm={300}
+          startIndex={40}
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    const { text, highlighted } = sentence(r);
+    expect(highlighted).toEqual(["w40"]);
+    // Eight words of lead-in keep the current word on the box's first lines,
+    // where the line limit cannot clip it, with ellipses where it is cut.
+    expect(text.startsWith("… w32 w33 w34 w35 w36 w37 w38 w39 w40 ")).toBe(true);
+    expect(text.endsWith(" …")).toBe(true);
+  });
+
+  it("shows and hides the sentence at once when reduce motion is on", async () => {
+    // React Native's jest setup already mocks this; spyOn would hand back that
+    // shared mock and leak the value into later tests. Once is one mount.
+    jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(true);
+    const r = mountProse(at("Three"));
+    await act(async () => {}); // let the setting load
+
+    press(r, "rsvp-playpause");
+    flushFrame(); // one frame, no time passing
+    expect(opacity(r, "rsvp-sentence")).toBe(0);
+
+    press(r, "rsvp-playpause");
+    flushFrame();
+    expect(opacity(r, "rsvp-sentence")).toBe(1);
+  });
+
+  /* ── fade in on open ───────────────────────────────── */
+
+  it("fades in over about 150ms when opened", () => {
+    const r = mountProse(0);
+    expect(opacity(r, "rsvp-root")).toBe(0);
+    advance(70);
+    expect(opacity(r, "rsvp-root")).toBeGreaterThan(0);
+    expect(opacity(r, "rsvp-root")).toBeLessThan(1);
+    advance(100);
+    expect(opacity(r, "rsvp-root")).toBe(1);
+  });
+
+  it("appears at once when it remounts for the next chapter", () => {
+    // The page underneath must not flash through between chapters.
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={tokens}
+          initialWpm={300}
+          introLabel="Chapter 2"
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    expect(opacity(r, "rsvp-root")).toBe(1);
+  });
+
+  it("appears at once when reduce motion is on", async () => {
+    jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(true);
+    const r = mountProse(0);
+    await act(async () => {}); // let the setting load
+    flushFrame(); // one frame, no time passing
+    expect(opacity(r, "rsvp-root")).toBe(1);
   });
 
   it("emits WPM changes to the parent", () => {

@@ -41,3 +41,7 @@ app-example
 # generated native folders
 /ios
 /android
+
+# perf test books (fetched by perf/fetch-books.sh)
+perf/books/
+perf/out/

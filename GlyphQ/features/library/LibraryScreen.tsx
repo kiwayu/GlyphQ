@@ -38,7 +38,6 @@ import {
 import { getAll } from "@/db/database";
 import { loadPrefs, savePrefs, type LibraryPrefs } from "@/services/preferences";
 import { importBookFromDevice, resolveBookSource } from "@/services/importBook";
-import { EpubExtractor } from "@/components/EpubExtractor";
 import { ImportValidationError } from "@/services/localEpub";
 import {
   getSmartCollectionsWithCounts,
@@ -242,7 +241,7 @@ export default function LibraryScreen() {
   const [smartCollectionBookIds, setSmartCollectionBookIds] = useState<number[]>([]);
 
   const [detailBook, setDetailBook] = useState<BookWithEntry | null>(null);
-  const [extractBook, setExtractBook] = useState<{ id: number; uri: string } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const letterPositions = useRef<Map<string, number>>(new Map());
@@ -417,52 +416,37 @@ export default function LibraryScreen() {
   [books]);
 
   const recentShelfBooks = useMemo<CoverShelfBook[]>(() =>
-    recentBooks.map((b) => ({ id: b.id, title: b.title, authors: b.authors, cover_url: b.cover_url, status: b.status })),
+    /* A book being read already has its own shelf directly above. */
+    recentBooks
+      .filter((b) => b.status !== "reading")
+      .map((b) => ({ id: b.id, title: b.title, authors: b.authors, cover_url: b.cover_url, status: b.status })),
   [recentBooks]);
 
   /* ── Handlers ────────────────────────────────────── */
   const handleRefresh = useCallback(async () => { setRefreshing(true); await loadLibrary(); setRefreshing(false); }, [loadLibrary]);
-  const goToSearch = useCallback(() => router.push("/search"), [router]);
-
-  const importFromDevice = useCallback(async () => {
-    try {
-      const res = await importBookFromDevice();
-      if (!res) return; // cancelled
-      await loadLibrary();
-      if (res.duplicate) {
-        Alert.alert("Already in library", `"${res.title}" is already in your library.`);
-      } else {
-        // Make the new book visible: persisted tab/search/filters/collection
-        // would otherwise hide a fresh want_to_read import.
-        setActiveTab("want_to_read");
-        setSearchQuery("");
-        setActiveSmartCollection(null);
-        setFilters(EMPTY_FILTERS);
-        // Pull author/cover from the epub now (hidden extractor); falls back to
-        // first open if it fails.
-        const uri = await resolveBookSource(res.bookId);
-        if (uri) setExtractBook({ id: res.bookId, uri });
-        Alert.alert("Book added", `"${res.title}" was added to Want to Read.`);
-      }
-    } catch (e) {
-      Alert.alert(
-        "Import failed",
-        e instanceof ImportValidationError ? e.message : "Could not import that file."
-      );
-    }
-  }, [loadLibrary]);
-
-  const handleAdd = useCallback(() => {
-    Alert.alert("Add a book", undefined, [
-      { text: "Search Online", onPress: goToSearch },
-      { text: "Import from Device", onPress: importFromDevice },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [goToSearch, importFromDevice]);
 
   const handleOpenReader = useCallback(async (book: BookWithEntry) => {
     await openBook(book.id); setCurrentBook(book); router.push("/reader");
   }, [openBook, setCurrentBook, router]);
+
+  /* Add goes straight to the file picker and straight into the book: a book
+     someone just picked is a book they want to read. A duplicate opens the
+     copy already in the library. Search has its own tab. */
+  const handleAdd = useCallback(async () => {
+    setImportError(null);
+    try {
+      const res = await importBookFromDevice();
+      if (!res) return; // cancelled
+      await loadLibrary();
+      const book = useLibraryStore.getState().books.find((b) => b.id === res.bookId);
+      if (book) await handleOpenReader(book);
+    } catch (e) {
+      console.warn("Import failed:", e);
+      setImportError(
+        e instanceof ImportValidationError ? e.message : "Could not import that file."
+      );
+    }
+  }, [loadLibrary, handleOpenReader]);
 
   const handleDeleteFolder = useCallback((folder: FolderWithBooks) => {
     Alert.alert("Delete Folder", `Delete "${folder.name}"? Books won't be removed from your library.`, [
@@ -485,6 +469,15 @@ export default function LibraryScreen() {
     const book = bookMap.get(bookId);
     if (book) setDetailBook(book);
   }, [bookMap]);
+
+  /* Tap a cover to read it; long-press for details. A book with no file
+     (added from search) has nothing to open, so it shows its details. */
+  const openBookOrDetail = useCallback(async (bookId: number) => {
+    const book = bookMap.get(bookId);
+    if (!book) return;
+    if (await resolveBookSource(bookId)) await handleOpenReader(book);
+    else setDetailBook(book);
+  }, [bookMap, handleOpenReader]);
 
   const handleSheetStartReading = useCallback(async (bookId: number) => { await startReading(bookId); }, [startReading]);
   const handleSheetFinish = useCallback(async (bookId: number) => { await finishReading(bookId); }, [finishReading]);
@@ -513,10 +506,10 @@ export default function LibraryScreen() {
         cover_url: b.cover_url, status: b.entry.status,
       }))}
       progressMap={progressMap}
-      onPress={openDetail}
+      onPress={openBookOrDetail}
       onLongPress={openDetail}
     />
-  ), [progressMap, openDetail]);
+  ), [progressMap, openDetail, openBookOrDetail]);
 
   const showAlphabetView = activeTab !== "all" && !isControlsActive;
 
@@ -537,6 +530,13 @@ export default function LibraryScreen() {
             <Text style={s.addBtnText}>Add</Text>
           </Pressable>
         </View>
+
+        {importError && (
+          <Pressable style={s.importError} onPress={() => setImportError(null)} accessibilityRole="alert">
+            <Text style={s.importErrorText}>{importError}</Text>
+            <Text style={s.importErrorDismiss}>Dismiss</Text>
+          </Pressable>
+        )}
 
         {/* ── Search + Filter ────────────────────────── */}
         <View style={ctrl.searchRow}>
@@ -646,12 +646,12 @@ export default function LibraryScreen() {
         ) : activeTab === "all" && !activeSmartCollection ? (
           <>
             <CoverShelf title="Currently Reading" data={currentlyReading} progressMap={progressMap}
-              onPress={openDetail} onLongPress={openDetail} accent />
+              onPress={openBookOrDetail} onLongPress={openDetail} accent />
             <CoverShelf title="Recently Read" data={recentShelfBooks} progressMap={progressMap}
-              onPress={openDetail} onLongPress={openDetail} />
+              onPress={openBookOrDetail} onLongPress={openDetail} />
             {seriesGroups.map((sg) => (
               <CoverShelf key={sg.name} title={sg.name} data={sg.books} progressMap={progressMap}
-                onPress={openDetail} onLongPress={openDetail} />
+                onPress={openBookOrDetail} onLongPress={openDetail} />
             ))}
             {folders.length > 0 && (
               <View style={s.divider}>
@@ -664,7 +664,7 @@ export default function LibraryScreen() {
                 <CollapsibleSection key={`f-${folder.id}`} title={folder.name} count={fBooks.length}
                   accentColor={folder.color} defaultExpanded={false}
                   rightAction={<Pressable style={s.deleteBtn} onPress={() => handleDeleteFolder(folder)} hitSlop={8}><Text style={s.deleteText}>✕</Text></Pressable>}>
-                  {fBooks.length > 0 ? renderCoverGrid(fBooks) : <EmptySection onAdd={goToSearch} />}
+                  {fBooks.length > 0 ? renderCoverGrid(fBooks) : <EmptySection onAdd={handleAdd} />}
                 </CollapsibleSection>
               );
             })}
@@ -684,7 +684,7 @@ export default function LibraryScreen() {
         ) : (
           <View style={s.alphabetContent}>
             {letterGroups.length === 0 ? (
-              <EmptySection onAdd={goToSearch} />
+              <EmptySection onAdd={handleAdd} />
             ) : (
               letterGroups.map((group) => (
                 <View key={group.letter} onLayout={(e) => registerLetterPosition(group.letter, e)}>
@@ -730,13 +730,6 @@ export default function LibraryScreen() {
           if (updated) setDetailBook(updated);
         }} />
 
-      {extractBook && (
-        <EpubExtractor
-          bookId={extractBook.id}
-          epubUrl={extractBook.uri}
-          onDone={() => { setExtractBook(null); loadLibrary(); }}
-        />
-      )}
     </View>
   );
 }
@@ -755,6 +748,14 @@ const s = StyleSheet.create({
   },
   headerTitle: { ...t.font.display },
   headerSub: { ...t.font.caption, color: t.color.text.tertiary, marginTop: 3 },
+  importError: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginHorizontal: t.space._5, marginBottom: t.space._3,
+    paddingHorizontal: t.space._4, paddingVertical: t.space._3,
+    borderRadius: t.radius.xl, backgroundColor: t.color.error.bg,
+  },
+  importErrorText: { ...t.font.body, color: t.color.error.base, flex: 1, marginRight: t.space._3 },
+  importErrorDismiss: { ...t.font.caption, color: t.color.error.base, fontWeight: "700" },
   addBtn: {
     flexDirection: "row", alignItems: "center", gap: t.space._1 + 1,
     backgroundColor: t.color.accent.strong,

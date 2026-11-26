@@ -1,0 +1,12 @@
+{
+ "label": "n100",
+ "books": 100,
+ "domNodes": 1480,
+ "tabOpenMs": 281,
+ "scrolledPx": 12638,
+ "fps": 60,
+ "frameGapP50": 16.7,
+ "frameGapP95": 16.8,
+ "frameGapMax": 16.8,
+ "droppedPct": 0
+}

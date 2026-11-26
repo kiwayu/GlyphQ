@@ -1,0 +1,46 @@
+{
+ "label": "after",
+ "cpuThrottle": 4,
+ "seconds": 20,
+ "rows": [
+  {
+   "wpm": 300,
+   "frames": 1210,
+   "frameGapP50": 16.7,
+   "frameGapP95": 16.8,
+   "frameGapMax": 33.3,
+   "droppedFrames": 2,
+   "droppedPct": 0.2,
+   "wordsShown": 97,
+   "deliveredWpm": 291,
+   "commitMsP50": 16.4,
+   "commitMsP95": 19.9
+  },
+  {
+   "wpm": 500,
+   "frames": 1210,
+   "frameGapP50": 16.7,
+   "frameGapP95": 16.7,
+   "frameGapMax": 33.4,
+   "droppedFrames": 1,
+   "droppedPct": 0.1,
+   "wordsShown": 167,
+   "deliveredWpm": 504,
+   "commitMsP50": 16,
+   "commitMsP95": 18.9
+  },
+  {
+   "wpm": 800,
+   "frames": 1212,
+   "frameGapP50": 16.7,
+   "frameGapP95": 16.8,
+   "frameGapMax": 16.8,
+   "droppedFrames": 0,
+   "droppedPct": 0,
+   "wordsShown": 252,
+   "deliveredWpm": 756,
+   "commitMsP50": 15.2,
+   "commitMsP95": 17.8
+  }
+ ]
+}

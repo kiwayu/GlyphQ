@@ -251,7 +251,21 @@ function readFrom(name: string): ThemeId | null {
    out moving the file the way db/database.ts does. Falling back to a read of
    the old database is equivalent from the user's point of view: the next
    setThemeId() writes to the new one, and the stale file is harmless. */
+/* On web the synchronous SQLite calls below are not available at module load
+   and there is no DevSettings.reload, so the theme never changed there. The
+   browser has both pieces natively: localStorage and location.reload. */
+const WEB_THEME_KEY = "glyphq-theme";
+const onWeb = Platform.OS === "web" && typeof window !== "undefined";
+
 function readThemeId(): ThemeId {
+  if (onWeb) {
+    try {
+      const id = window.localStorage.getItem(WEB_THEME_KEY);
+      return id && THEME_SEEDS[id as ThemeId] ? (id as ThemeId) : "light";
+    } catch {
+      return "light";
+    }
+  }
   try {
     const current = readFrom(THEME_DB);
     if (current) return current;
@@ -276,6 +290,15 @@ export function getThemeId(): ThemeId {
 /** Persist the theme and reload so every screen rebuilds in the new palette. */
 export function setThemeId(id: ThemeId): void {
   if (!THEME_SEEDS[id] || id === currentId) return;
+  if (onWeb) {
+    try {
+      window.localStorage.setItem(WEB_THEME_KEY, id);
+      window.location.reload();
+    } catch {
+      /* storage blocked: nothing to apply */
+    }
+    return;
+  }
   try {
     const SQLite = require("expo-sqlite");
     const db = SQLite.openDatabaseSync(THEME_DB);

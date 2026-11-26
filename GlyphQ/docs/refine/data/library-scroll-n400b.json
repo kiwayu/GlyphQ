@@ -1,0 +1,12 @@
+{
+ "label": "n400b",
+ "books": 400,
+ "domNodes": 4480,
+ "tabOpenMs": 733,
+ "scrolledPx": 36000,
+ "fps": 49.9,
+ "frameGapP50": 16.7,
+ "frameGapP95": 33.4,
+ "frameGapMax": 66.6,
+ "droppedPct": 17.1
+}

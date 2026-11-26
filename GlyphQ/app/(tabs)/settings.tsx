@@ -1,3 +1,5 @@
+import { useLibraryStore } from "@/store/libraryStore";
+import { READER_FONT_NAMES } from "@/features/reader/readerPrefs";
 import { useState, useEffect, useCallback } from "react";
 import {
   View,
@@ -13,7 +15,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Platform } from "react-native";
 import * as Sharing from "expo-sharing";
-import { Paths, writeAsStringAsync, readAsStringAsync } from "expo-file-system";
+import { Paths } from "expo-file-system";
+/* The string read/write helpers live in the legacy entry on SDK 54; from the
+   main entry they are deprecated stubs. The rest of the app already uses it. */
+import { writeAsStringAsync, readAsStringAsync } from "expo-file-system/legacy";
 import * as DocumentPicker from "expo-document-picker";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { t, THEME_LIST, getThemeId, setThemeId } from "@/theme";
@@ -47,16 +52,9 @@ const THEME_LABELS: Record<string, string> = {
   night: "Night",
 };
 
-const FONT_OPTIONS = [
-  "Georgia",
-  "System",
-  "Palatino",
-  "Bookerly",
-  "Lora",
-  "Times New Roman",
-  "Helvetica",
-  "Courier",
-];
+/* Only fonts the reader can actually show. This list used to offer five the
+   reader did not have; choosing one silently gave Georgia. */
+const FONT_OPTIONS = READER_FONT_NAMES;
 
 /* ── Section wrapper ─────────────────────────────────── */
 
@@ -375,7 +373,8 @@ export default function SettingsTab() {
       if (result.canceled || !result.assets?.[0]) return;
 
       const file = result.assets[0];
-      const content = await readAsStringAsync(file.uri);
+      // On web the picker hands back a File; there is no file system to read.
+      const content = file.file ? await file.file.text() : await readAsStringAsync(file.uri);
 
       let importResult: ImportResult;
 
@@ -395,6 +394,9 @@ export default function SettingsTab() {
 
       Alert.alert("Import Complete", message);
       await load();
+      // The library screen reads the store, not the database: without this the
+      // imported books stay invisible until the app restarts.
+      await useLibraryStore.getState().loadLibrary();
     } catch (e) {
       Alert.alert("Import Failed", "Could not read the selected file.");
     }

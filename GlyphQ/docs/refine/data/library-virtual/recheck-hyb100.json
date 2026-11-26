@@ -1,0 +1,19 @@
+{
+ "label": "hyb100",
+ "books": 100,
+ "domNodes": 1496,
+ "domNodesEnd": 1496,
+ "tabOpenMs": 362,
+ "scrolledPx": 11632,
+ "scrollMaxPx": 11632,
+ "wheelSteps": 49,
+ "lastBook": "Z0077 Sample Title",
+ "lastBookOnScreen": true,
+ "blankSamples": "0/18",
+ "noImageSamples": "0/18",
+ "fps": 46,
+ "frameGapP50": 16.7,
+ "frameGapP95": 33.3,
+ "frameGapMax": 150.1,
+ "droppedPct": 6.4
+}

@@ -1,7 +1,9 @@
 import jszipSrc from "./vendor/jszipMin";
 import epubjsSrc from "./vendor/epubjsMin";
+import { READER_THEMES, type ReaderTheme } from "./readerThemes";
 
-export type ReaderTheme = "light" | "sepia" | "dark" | "night";
+export type { ReaderTheme };
+
 export type ReaderFont  = "georgia" | "palatino" | "charter" | "system";
 
 export interface ReaderSettings {
@@ -25,22 +27,34 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   marginWidth: 20,
 };
 
-const INIT_BG: Record<ReaderTheme, string> = {
-  light: "#fafafa",
-  sepia: "#f4ecd8",
-  dark:  "#1c1c1c",
-  night: "#000000",
-};
+/**
+ * JSON that is safe inside an inline <script>. A saved position and the cached
+ * page numbers are CFIs, and a CFI carries element ids taken from the book, so
+ * a crafted EPUB could put "</script>" in one and break out of the script.
+ * Escaping "<" keeps the value inside its string.
+ */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c");
+}
 
 export function buildReaderHtml(
   epubUrl:    string,
   initialCfi: string | null,
-  settings:   ReaderSettings
+  settings:   ReaderSettings,
+  /** epub.js locations JSON from an earlier open of this book, if cached. */
+  savedLocations: string | null = null
 ): string {
-  const initBg      = INIT_BG[settings.theme];
-  const cfiArg      = initialCfi ? JSON.stringify(initialCfi) : "null";
-  const urlArg      = JSON.stringify(epubUrl);
-  const settingsArg = JSON.stringify(settings);
+  const initBg      = settings.bg || READER_THEMES[settings.theme].bg;
+  const themesArg   = JSON.stringify(
+    Object.fromEntries(
+      Object.entries(READER_THEMES).map(([k, v]) => [k, { bg: v.bg, fg: v.fg, link: v.link }])
+    )
+  );
+  const cfiArg      = initialCfi ? scriptJson(initialCfi) : "null";
+  const urlArg      = scriptJson(epubUrl);
+  const locationsArg = savedLocations ? scriptJson(savedLocations) : "null";
+  const settingsArg = scriptJson(settings);
 
   return `<!DOCTYPE html>
 <html><head>
@@ -51,7 +65,7 @@ export function buildReaderHtml(
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden}
-body{background:${initBg};transition:background .2s}
+body{background:${initBg}}
 #viewer{width:100%;height:100%;padding:0 ${settings.marginWidth}px}
 #loading{
   position:fixed;inset:0;
@@ -77,23 +91,7 @@ body{background:${initBg};transition:background .2s}
 <div id="err"><div id="err-msg"></div></div>
 <div id="viewer"></div>
 <script>(function(){
-var THEMES={
-  light:{bg:"#fafafa",fg:"#1a1a1a",link:"#3f82bc"},
-  sepia:{bg:"#f4ecd8",fg:"#5b4636",link:"#8b5e3c"},
-  dark: {bg:"#1c1c1c",fg:"#d4d4d4",link:"#88BDF2"},
-  night:{bg:"#000000",fg:"#a0a0a0",link:"#6A89A7"}
-};
-/* Theme is applied as a CSS *filter* on the outer #viewer element (which we
-   fully control). A filter is a paint effect the browser composites over
-   everything inside #viewer — INCLUDING the cross-origin book iframe — so it
-   works where touching the iframe DOM is blocked. Dark = invert the viewer;
-   under invert a white page becomes dark and black text becomes light. */
-var THEME_VIEW={
-  light:{filter:"none",             pageBg:"#fafafa", edgeBg:"#fafafa"},
-  sepia:{filter:"sepia(0.55) brightness(1.02) contrast(0.96)", pageBg:"#f4ecd8", edgeBg:"#f4ecd8"},
-  dark: {filter:"invert(1) hue-rotate(180deg)",               pageBg:"#ffffff", edgeBg:"#1c1c1c"},
-  night:{filter:"invert(1) hue-rotate(180deg) brightness(0.82)", pageBg:"#ffffff", edgeBg:"#000000"}
-};
+var THEMES=${themesArg};
 var FONTS={
   georgia: "Georgia,'Times New Roman',serif",
   palatino:"'Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif",
@@ -142,53 +140,36 @@ function chapterOf(href){
   return"";
 }
 
-/* THEME: applied entirely on the outer #viewer via a CSS filter (see above).
-   This is the guaranteed path — no iframe access. */
+/* THEME: colours are painted straight into the book through epub.js's content
+   hook (contentCss), and the page around it takes the same background. An app
+   palette (s.bg/s.fg/s.link) wins over the named theme. Nothing is filtered,
+   so pictures keep their own colours in dark themes. */
+function palette(){
+  var th=THEMES[s.theme]||THEMES.light;
+  return {bg:s.bg||th.bg,fg:s.fg||th.fg,link:s.link||s.fg||th.link};
+}
 function applyTheme(){
   var v=document.getElementById("viewer");
   var loadEl=document.getElementById("loading");
-  if(s.bg&&s.fg){
-    // Exact palette (app theme): colour the content directly (via contentCss on
-    // the content hook), no filter — so images look normal and colours are true.
-    if(v){
-      v.style.padding="0 "+s.marginWidth+"px";
-      v.style.filter="none";v.style.webkitFilter="none";
-      v.style.background=s.bg;
-    }
-    document.body.style.background=s.bg;
-    if(loadEl)loadEl.style.background=s.bg;
-    repaintContents();
-    return;
-  }
-  var cfg=THEME_VIEW[s.theme]||THEME_VIEW.light;
-  if(v){
-    v.style.padding="0 "+s.marginWidth+"px";
-    v.style.filter=cfg.filter;
-    v.style.webkitFilter=cfg.filter;
-    v.style.background=cfg.pageBg;   // white under invert → dark page
-  }
-  document.body.style.background=cfg.edgeBg;      // margins (not inverted)
-  if(loadEl)loadEl.style.background=cfg.edgeBg;
+  var p=palette();
+  if(v){v.style.padding="0 "+s.marginWidth+"px";v.style.background=p.bg;}
+  document.body.style.background=p.bg;
+  if(loadEl)loadEl.style.background=p.bg;
+  repaintContents();
 }
 
-/* TYPOGRAPHY (font/size/spacing) — best effort via epub.js's own Contents API.
-   No colours here: the filter owns colour, so this never fights it. */
 function contentCss(){
-  var ff=(FONTS[s.font]||FONTS.georgia);
-  var css="html,body{font-family:"+ff+" !important;line-height:"+s.lineHeight+" !important;"
-    +"font-size:"+s.fontSize+"px !important;}"
-    +"body *{font-family:"+ff+" !important;line-height:"+s.lineHeight+" !important;}"
-    +"p{margin-bottom:.75em;}"
+  var ff=(FONTS[s.font]||FONTS.georgia),p=palette();
+  return "html,body{font-family:"+ff+" !important;line-height:"+s.lineHeight+" !important;"
+    +"font-size:"+s.fontSize+"px !important;"
+    +"background:"+p.bg+" !important;color:"+p.fg+" !important;}"
+    +"body *{font-family:"+ff+" !important;line-height:"+s.lineHeight+" !important;"
+    +"color:"+p.fg+" !important;}"
+    +"body *:not(img):not(svg):not(video){background-color:transparent !important;}"
+    +"a,a *{color:"+p.link+" !important;}"
+    +"p{margin-bottom:.75em;-webkit-hyphens:auto;hyphens:auto;hyphenate-limit-chars:7 3 3;}"
     +"h1,h2,h3,h4,h5,h6{margin:1em 0 .5em;}"
     +"img,svg{max-width:100% !important;height:auto !important;}";
-  if(s.bg&&s.fg){
-    // exact palette: paint colours here (the filter path leaves colours alone)
-    var link=s.link||s.fg;
-    css+="html,body{background:"+s.bg+" !important;color:"+s.fg+" !important;}"
-      +"body *{color:"+s.fg+" !important;}"
-      +"a,a *{color:"+link+" !important;}";
-  }
-  return css;
 }
 function paintContents(contents){
   try{if(contents&&contents.addStylesheetCss)contents.addStylesheetCss(contentCss(), "bb-type");}catch(e){}
@@ -209,8 +190,7 @@ function applySettings(json){
   var prevLayout=s.font+"_"+s.fontSize+"_"+s.lineHeight+"_"+s.marginWidth;
   Object.assign(s,incoming);
   var newLayout=s.font+"_"+s.fontSize+"_"+s.lineHeight+"_"+s.marginWidth;
-  applyTheme();                    // theme (colour) — instant, guaranteed
-  repaintContents();               // typography — best effort
+  applyTheme();                    // colours + typography, repaints the book
   if(newLayout!==prevLayout&&rendition){
     try{
       var v=document.getElementById("viewer");
@@ -222,7 +202,15 @@ function applySettings(json){
 
 /* ── book init ────────────────────────────────────── */
 try{
-  book=ePub(${urlArg});
+  /* A blob: URL has no .epub extension for epub.js to sniff, so say what it is. */
+  var bookUrl=${urlArg};
+  book=/^blob:/.test(bookUrl)?ePub(bookUrl,{openAs:"epub"}):ePub(bookUrl);
+  /* A file epub.js cannot open (cut-off download, not a zip) never rejects
+     display(): the only signal is this event. Without it the page sat on
+     "Opening book" for ever. */
+  book.on("openFailed",function(){
+    showError("This file could not be opened. It may be damaged or not an EPUB.");
+  });
   rendition=book.renderTo("viewer",{
     width:"100%",height:"100%",
     spread:"none",flow:"paginated"
@@ -241,9 +229,23 @@ try{
   dp.then(function(){hideLoading();post("ready");})
     .catch(function(e){showError("Could not display book: "+(e&&e.message||"unknown error"));});
 
+  /* Page numbers. Generating them reads every chapter of the book, so a cached
+     set from an earlier open is loaded instead when there is one; a fresh set
+     is posted back to be cached. Either way the current page is re-reported,
+     because the first relocated fired before any numbers existed. */
+  var savedLocations=${locationsArg};
   book.ready
-    .then(function(){return book.locations.generate(1600);})
-    .then(function(){totalPages=book.locations.length();post("locationsGenerated",{totalPages:totalPages});})
+    .then(function(){
+      if(savedLocations){
+        try{book.locations.load(savedLocations);if(book.locations.length())return null;}catch(e){}
+      }
+      return book.locations.generate(1600).then(function(){return book.locations.save();});
+    })
+    .then(function(fresh){
+      totalPages=book.locations.length();
+      post("locationsGenerated",{totalPages:totalPages,locations:fresh});
+      try{rendition.reportLocation();}catch(e){}
+    })
     .catch(function(){});
 
   /* Flatten the nav tree: epubs nest chapters under parts ("books within the
@@ -271,11 +273,18 @@ try{
   rendition.on("relocated",function(loc){
     var pct=loc.start.percentage||0;
     var cfi=loc.start.cfi;
+    var disp0=(loc.start&&loc.start.displayed)||{};
+    /* Page numbers need book.locations, which takes a while on a long book.
+       Until then, estimate progress from the chapter's place in the spine. */
+    if(!totalPages&&book.spine){
+      var nSec=book.spine.length||0;
+      if(nSec)pct=((loc.start.index||0)+((disp0.page||1)-1)/(disp0.total||1))/nSec;
+    }
     currentCfi=cfi;
     var page=0;
     if(book.locations&&cfi){try{page=book.locations.locationFromCfi(cfi)||0;}catch(e){}}
     /* epub.js already paginates the current section; reuse its counts. */
-    var disp=(loc.start&&loc.start.displayed)||{};
+    var disp=disp0;
     post("locationChanged",{
       cfi:cfi,
       percentage:Math.round(pct*10000)/100,
@@ -331,6 +340,9 @@ function textBlocks(doc){
   if(!doc||!doc.body)return out;
   var blocks=doc.body.querySelectorAll(BLOCK_SEL);
   for(var i=0;i<blocks.length;i++){
+    /* A block that wraps other blocks (blockquote > p, li > p) would repeat
+       their text: once for itself and once for each child. Keep the leaves. */
+    if(blocks[i].querySelector(BLOCK_SEL))continue;
     if((blocks[i].textContent||"").replace(/\\s+/g," ").trim())out.push(blocks[i]);
   }
   return out;
@@ -364,12 +376,45 @@ function chapterParagraphs(){
 function currentHref(){
   return (rendition&&rendition.location&&rendition.location.start&&rendition.location.start.href)||"";
 }
+/* Index of the word at (node,offset) inside a block, numbered the way
+   wordRange numbers them. A position inside a word is that word. */
+function wordsBefore(el,target,offset){
+  var doc=el.ownerDocument,walker=doc.createTreeWalker(el,4,null),node,count=-1,open=false;
+  while((node=walker.nextNode())){
+    var txt=node.nodeValue||"",re=/\\S+/g,m;
+    while((m=re.exec(txt))){
+      if(!(m.index===0&&open))count++;
+      if(node===target&&m.index+m[0].length>offset)return count;
+    }
+    if(node===target)return count+1;
+    if(txt.length)open=/\\S$/.test(txt);
+  }
+  return Math.max(0,count);
+}
+/* Where the page on screen starts, as (text block, word in block), so speed
+   reading can begin at the top of the page instead of the top of the chapter. */
+function pageStart(){
+  try{
+    var cs=rendition.getContents();
+    if(cs&&cs.document)cs=[cs];
+    var c=cs&&cs[0];
+    if(!c||!c.range||!currentCfi)return null;
+    var r=c.range(currentCfi);
+    if(!r)return null;
+    var node=r.startContainer,blocks=textBlocks(c.document);
+    for(var i=0;i<blocks.length;i++){
+      if(blocks[i].contains(node))return {block:i,word:wordsBefore(blocks[i],node,r.startOffset)};
+      if(node.compareDocumentPosition(blocks[i])&4)return {block:i,word:0};
+    }
+  }catch(e){}
+  return null;
+}
 function getChapterText(){
   try{
     var h=currentHref();
     /* href identifies WHICH chapter these tokens are: a resume pointer without
        it can land part-way into a different, merely-long-enough chapter. */
-    post("chapterText",{paragraphs:chapterParagraphs(),chapter:chapterOf(h),href:h});
+    post("chapterText",{paragraphs:chapterParagraphs(),chapter:chapterOf(h),href:h,pageStart:pageStart()});
   }catch(e){post("chapterText",{paragraphs:[],chapter:"",href:""});}
 }
 
@@ -432,11 +477,52 @@ function nextChapter(){
    close-time seek is the last navigation to win. */
 function cancelAdvance(){advGen++;}
 
-/* Move the page to the Nth text block of the current chapter — where speed
-   reading stopped (RSVP tokens carry that index). Posts currentCfi afterwards
+/* Range around the w-th whitespace-delimited word of a block. A word can span
+   text nodes ("<em>hel</em>lo"), so a run that starts flush against the end of
+   the previous node continues that word instead of starting a new one. This
+   counts the same way the RSVP tokeniser splits the block's text. */
+function wordRange(el,w){
+  try{
+    var doc=el.ownerDocument,walker=doc.createTreeWalker(el,4,null),node,count=-1,open=false;
+    while((node=walker.nextNode())){
+      var txt=node.nodeValue||"",re=/\\S+/g,m;
+      while((m=re.exec(txt))){
+        if(!(m.index===0&&open))count++;
+        if(count===w){
+          var r=doc.createRange();
+          r.setStart(node,m.index);r.setEnd(node,m.index+m[0].length);
+          return r;
+        }
+      }
+      if(txt.length)open=/\\S$/.test(txt);
+    }
+  }catch(e){}
+  return null;
+}
+/* Mark the word the reader stopped on, then fade the mark out (opacity only). */
+function flashWord(r){
+  try{
+    var doc=r.startContainer.ownerDocument,win=doc.defaultView||{},rect=r.getBoundingClientRect();
+    var old=doc.getElementById("bb-flash");if(old&&old.parentNode)old.parentNode.removeChild(old);
+    var el=doc.createElement("div");
+    el.id="bb-flash";
+    el.setAttribute("data-word",r.toString());
+    el.style.cssText="position:absolute;pointer-events:none;border-radius:3px;opacity:.35;"
+      +"transition:opacity .6s ease-out;background:"+palette().link+";"
+      +"left:"+(rect.left+(win.scrollX||0)-2)+"px;top:"+(rect.top+(win.scrollY||0))+"px;"
+      +"width:"+(rect.width+4)+"px;height:"+rect.height+"px;";
+    doc.body.appendChild(el);
+    setTimeout(function(){el.style.opacity="0";},1400);
+    setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},2200);
+  }catch(e){}
+}
+
+/* Move the page to where speed reading stopped: word w of the Nth text block
+   of the current chapter (RSVP tokens carry both). Posts currentCfi afterwards
    so the caller can drop its marker on the page the reader actually landed on,
-   not the stale one it was showing while the overlay was up. */
-function goToBlock(n){
+   not the stale one it was showing while the overlay was up. Without w, or if
+   the word cannot be found, it lands on the start of the block. */
+function goToBlock(n,w){
   function fallback(){post("currentCfi",{cfi:currentCfi});}
   try{
     var cs=rendition&&rendition.getContents&&rendition.getContents();
@@ -455,12 +541,13 @@ function goToBlock(n){
       c=cs[i];el=blocks[blocks.length-1];   // past the end → last block seen
     }
     if(!c||!el||!c.cfiFromNode){fallback();return;}
-    var cfi=c.cfiFromNode(el);
+    var range=(typeof w==="number"&&w>=0)?wordRange(el,w):null;
+    var cfi=(range&&c.cfiFromRange)?c.cfiFromRange(range):c.cfiFromNode(el);
     if(!cfi){fallback();return;}
     /* Post the CFI we computed, not currentCfi: relocated is not guaranteed to
        have run, and the marker must land on the block we asked for. */
     rendition.display(cfi)
-      .then(function(){post("currentCfi",{cfi:cfi});})
+      .then(function(){if(range)flashWord(range);post("currentCfi",{cfi:cfi});})
       .catch(fallback);
   }catch(e){fallback();}
 }

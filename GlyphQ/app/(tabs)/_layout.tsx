@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -16,6 +17,8 @@ export default function TabLayout() {
           backgroundColor: t.color.bg.raised,
           borderTopColor: t.color.border.default,
           borderTopWidth: 0.5,
+          // The web tab bar is 49px with a 10px label line: descenders were cut off.
+          ...(Platform.OS === 'web' ? { height: 58, paddingBottom: 6 } : null),
         },
       }}
     >

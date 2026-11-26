@@ -153,6 +153,8 @@ async function fetchTags(): Promise<Tag[]> {
   return getAll<Tag>("SELECT * FROM tags ORDER BY name");
 }
 
+let restoredLastBook = false;
+
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   books: [],
   folders: [],
@@ -169,6 +171,21 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         fetchTags(),
       ]);
       set({ books, folders, tags });
+      /* First load after a launch: put the book last read back in the Reader
+         tab, so resuming is one tap instead of a trip through the library. */
+      if (!restoredLastBook) {
+        restoredLastBook = true;
+        if (!get().currentBook) {
+          const last = await getOne<{ book_id: number }>(
+            `SELECT rp.book_id FROM reading_progress rp
+             JOIN library_entries le ON le.book_id = rp.book_id
+             WHERE le.status = 'reading'
+             ORDER BY rp.last_opened DESC LIMIT 1`
+          );
+          const book = last && books.find((b) => b.id === last.book_id);
+          if (book) set({ currentBook: book });
+        }
+      }
     } finally {
       set({ isLoading: false });
     }

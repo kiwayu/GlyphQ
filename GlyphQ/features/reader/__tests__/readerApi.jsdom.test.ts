@@ -40,6 +40,8 @@ interface Harness {
   messages: any[];
   displayed: string[];
   setContents: (docs: Document[]) => void;
+  /** Fire epub.js's "the file could not be opened" event. */
+  failToOpen: () => void;
   flush: () => Promise<void>;
 }
 
@@ -59,6 +61,7 @@ function boot(
 
   const messages: any[] = [];
   const displayed: string[] = [];
+  let openFailed: () => void = () => {};
   (window as any).ReactNativeWebView = {
     postMessage: (s: string) => messages.push(JSON.parse(s)),
   };
@@ -98,6 +101,7 @@ function boot(
   };
 
   const book = {
+    on: (name: string, fn: () => void) => { if (name === "openFailed") openFailed = fn; },
     renderTo: () => rendition,
     ready: Promise.resolve(),
     loaded: {
@@ -106,6 +110,8 @@ function boot(
     },
     locations: {
       generate: () => Promise.resolve(),
+      save: () => "[]",
+      load: () => {},
       length: () => 0,
       locationFromCfi: () => 0,
     },
@@ -129,8 +135,10 @@ function boot(
       contents = docs.map((d) => ({
         document: d,
         cfiFromNode: (el: Element) => `cfi(${el.textContent})`,
+        cfiFromRange: (r: Range) => `cfi(word:${r.toString()})`,
       }));
     },
+    failToOpen: () => openFailed(),
     flush: async () => {
       for (let i = 0; i < 300; i++) await Promise.resolve();
       await new Promise((r) => setTimeout(r, 0));
@@ -316,5 +324,60 @@ describe("chapter labels", () => {
     await h.flush();
 
     expect(chapterMsgs(h).pop().chapter).toBe("The Real Chapter");
+  });
+});
+
+/* ── where speed reading stopped ─────────────────── */
+
+describe("readerApi.goToBlock with a word", () => {
+  it("lands on the word itself, not just the start of its block", async () => {
+    const h = boot([{ index: 0, href: "c0.xhtml" }], () => []);
+    h.setContents([docWith(["alpha beta", "one two three four"])]);
+
+    h.api.goToBlock(1, 2);
+    await h.flush();
+
+    expect(h.displayed).toContain("cfi(word:three)");
+  });
+
+  it("counts a word split across inline tags as one word", async () => {
+    const h = boot([{ index: 0, href: "c0.xhtml" }], () => []);
+    const d = document.implementation.createHTMLDocument("s");
+    d.body.innerHTML = "<p>one <em>tw</em>o three four</p>";
+    h.setContents([d]);
+
+    h.api.goToBlock(0, 2);
+    await h.flush();
+
+    expect(h.displayed).toContain("cfi(word:three)");
+  });
+});
+
+/* ── text blocks ─────────────────────────────────── */
+
+describe("chapter text", () => {
+  it("reads a paragraph inside a quote or list item once, not twice", async () => {
+    const h = boot([{ index: 0, href: "c0.xhtml" }], () => []);
+    const d = document.implementation.createHTMLDocument("s");
+    d.body.innerHTML =
+      "<p>before</p><blockquote><p>quoted line</p></blockquote><ul><li><p>item</p></li></ul>";
+    h.setContents([d]);
+
+    h.api.getChapterText();
+
+    expect(chapterMsgs(h).pop().paragraphs).toEqual(["before", "quoted line", "item"]);
+  });
+});
+
+/* ── a file that cannot be opened ────────────────── */
+
+describe("a file epub.js cannot open", () => {
+  it("reports an error instead of loading for ever", () => {
+    const h = boot([{ index: 0, href: "c0.xhtml" }], () => []);
+
+    h.failToOpen();
+
+    expect(h.messages.filter((m) => m.type === "error")).toHaveLength(1);
+    expect(document.getElementById("err")!.style.display).toBe("flex");
   });
 });

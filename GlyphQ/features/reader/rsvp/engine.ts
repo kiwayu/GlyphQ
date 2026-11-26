@@ -4,8 +4,9 @@
  * Timeline model (eng review 7A + D19):
  *
  *   tokens:     [ w0 ][ w1 ][ w2 ][ w3 ] ...
- *   durations:  [ d0 ][ d1 ][ d2 ][ d3 ]      durationFor(token, wpm)
- *   cumEnd:     [ d0 ][d0+d1][d0+d1+d2] ...   buildSchedule(durations)
+ *   durations:  [ d0 ][ d1 ][ d2 ][ d3 ]      durationFor(token, wpm),
+ *                                             scaled so their mean is 60000/wpm
+ *   cumEnd:     [ d0 ][d0+d1][d0+d1+d2] ...   schedule(tokens, wpm)
  *
  *   The overlay runs a requestAnimationFrame loop:
  *     visible word = offset + wordIndexAt(cumEnd, now - clockStart)
@@ -27,6 +28,13 @@ export interface Token {
   paragraphIndex: number;
   /** True for the last word of a paragraph (longer pause). */
   isParagraphEnd: boolean;
+  /**
+   * Index, within its paragraph, of the whitespace-delimited word this token
+   * came from. Em-dash splits share one: "war—peace" gives two tokens with
+   * the same sourceWord. The page counts words by whitespace, so this is
+   * what maps an RSVP position back to the exact word on the page.
+   */
+  sourceWord: number;
 }
 
 export interface Schedule {
@@ -64,21 +72,29 @@ const EM_DASH = "—";
  * - quotes and other punctuation stay attached to their word
  */
 export function tokenize(text: string): string[] {
+  return splitWords(text).map((w) => w.word);
+}
+
+/** tokenize, keeping for each token the index of the word it came from. */
+function splitWords(text: string): { word: string; sourceWord: number }[] {
   if (!text) return [];
-  const out: string[] = [];
+  const out: { word: string; sourceWord: number }[] = [];
+  let sourceWord = 0;
   for (const raw of text.split(/\s+/)) {
     if (!raw) continue;
+    const push = (word: string) => out.push({ word, sourceWord });
     if (raw.includes(EM_DASH)) {
       // "a—b" -> "a—", "b"; standalone "—" survives as its own token
       const parts = raw.split(EM_DASH);
       for (let i = 0; i < parts.length - 1; i++) {
-        if (parts[i]) out.push(parts[i] + EM_DASH);
-        else if (i === 0) out.push(EM_DASH);
+        if (parts[i]) push(parts[i] + EM_DASH);
+        else if (i === 0) push(EM_DASH);
       }
-      if (parts[parts.length - 1]) out.push(parts[parts.length - 1]);
+      if (parts[parts.length - 1]) push(parts[parts.length - 1]);
     } else {
-      out.push(raw);
+      push(raw);
     }
+    sourceWord++;
   }
   return out;
 }
@@ -87,12 +103,13 @@ export function tokenize(text: string): string[] {
 export function tokenizeParagraphs(paragraphs: string[]): Token[] {
   const tokens: Token[] = [];
   paragraphs.forEach((text, paragraphIndex) => {
-    const words = tokenize(text);
-    words.forEach((word, i) => {
+    const words = splitWords(text);
+    words.forEach(({ word, sourceWord }, i) => {
       tokens.push({
         word,
         paragraphIndex,
         isParagraphEnd: i === words.length - 1,
+        sourceWord,
       });
     });
   });
@@ -101,13 +118,12 @@ export function tokenizeParagraphs(paragraphs: string[]): Token[] {
 
 /* ── ORP ────────────────────────────────────────────────────────── */
 
-/**
- * Index of the focal (ORP) letter. OpenSpritz rule by length:
- * 1 char -> 0, 2-5 -> 1, 6-9 -> 2, 10-13 -> 3, longer -> 4.
- * Clamped to the last character for safety on punctuation-only tokens.
- */
-export function orpIndex(word: string): number {
-  const len = word.length;
+/* Punctuation and quotes that can sit at either edge of a word. */
+const LEADING_MARKS = /^["'“”‘’«»„‚‹›()[\]{}.,;:!?…—–*_-]+/;
+const TRAILING_MARKS = /["'“”‘’«»„‚‹›()[\]{}.,;:!?…—–*_-]+$/;
+
+/** OpenSpritz rule by length: 1 -> 0, 2-5 -> 1, 6-9 -> 2, 10-13 -> 3, longer -> 4. */
+function orpForLength(len: number): number {
   if (len <= 1) return 0;
   let idx: number;
   if (len <= 5) idx = 1;
@@ -115,6 +131,19 @@ export function orpIndex(word: string): number {
   else if (len <= 13) idx = 3;
   else idx = 4;
   return Math.min(idx, len - 1);
+}
+
+/**
+ * Index of the focal (ORP) letter within the full word. Like the Spritz
+ * patent table, the length rule counts letters only: leading and trailing
+ * punctuation and quotes are set aside, so “Hello,” focuses on its "e".
+ * A punctuation-only token falls back to the rule on its full length.
+ */
+export function orpIndex(word: string): number {
+  const lead = word.match(LEADING_MARKS)?.[0].length ?? 0;
+  const core = word.slice(lead).replace(TRAILING_MARKS, "");
+  if (!core) return orpForLength(word.length);
+  return lead + orpForLength(core.length);
 }
 
 export interface OrpParts {
@@ -148,7 +177,10 @@ function visibleLength(word: string): number {
   return word.replace(TRAILING_PUNCT, "").length;
 }
 
-/** Display duration in ms for one token at the given WPM. */
+/**
+ * Display duration in ms for one token at the given WPM, before schedule()
+ * scales the chapter so its average word lasts 60000/wpm.
+ */
 export function durationFor(token: Token, wpm: number): number {
   if (wpm <= 0) throw new RangeError(`wpm must be positive, got ${wpm}`);
   const base = 60000 / wpm;
@@ -171,7 +203,15 @@ export function durationFor(token: Token, wpm: number): number {
 
 /* ── Scheduling ─────────────────────────────────────────────────── */
 
-/** Schedule for tokens[fromIndex..] at the given WPM; t=0 = fromIndex. */
+/**
+ * Schedule for tokens[fromIndex..] at the given WPM; t=0 = fromIndex.
+ *
+ * Every duration is scaled so the average word across the whole token list
+ * lasts exactly 60000/wpm (the Spritz patent's normalisation). Pauses keep
+ * their ratios, and the wpm on screen is the real throughput. The scale comes
+ * from the whole list, not the slice from fromIndex, so rescheduling
+ * mid-chapter keeps the same pace.
+ */
 export function schedule(
   tokens: Token[],
   wpm: number,
@@ -182,13 +222,46 @@ export function schedule(
       `fromIndex ${fromIndex} out of range 0..${tokens.length}`
     );
   }
+  const raw = tokens.map((t) => durationFor(t, wpm));
+  const rawTotal = raw.reduce((a, b) => a + b, 0);
+  const scale = (tokens.length * 60000) / wpm / rawTotal;
   const cumEnd: number[] = [];
   let acc = 0;
   for (let i = fromIndex; i < tokens.length; i++) {
-    acc += durationFor(tokens[i], wpm);
+    acc += raw[i] * scale;
     cumEnd.push(acc);
   }
   return { offset: fromIndex, cumEnd };
+}
+
+/* ── Sentences ──────────────────────────────────────────────────── */
+
+/** A sentence ends at sentence-end punctuation or at a paragraph end. */
+function endsSentence(token: Token): boolean {
+  return token.isParagraphEnd || SENTENCE_END.test(token.word);
+}
+
+/** Index of the first token of the sentence containing `index`. */
+export function sentenceStart(tokens: Token[], index: number): number {
+  let i = index;
+  while (i > 0 && !endsSentence(tokens[i - 1])) i--;
+  return i;
+}
+
+/** Start of the sentence before the one containing `index`; 0 in the first. */
+export function prevSentenceStart(tokens: Token[], index: number): number {
+  const start = sentenceStart(tokens, index);
+  return start === 0 ? 0 : sentenceStart(tokens, start - 1);
+}
+
+/**
+ * Start of the sentence after the one containing `index`, or tokens.length
+ * when that sentence is the last.
+ */
+export function nextSentenceStart(tokens: Token[], index: number): number {
+  let i = index;
+  while (i < tokens.length && !endsSentence(tokens[i])) i++;
+  return Math.min(i + 1, tokens.length);
 }
 
 /**

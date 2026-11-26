@@ -1,0 +1,41 @@
+{
+ "label": "live",
+ "rows": [
+  {
+   "frames": "recorded",
+   "wpm": 300,
+   "words": 1332,
+   "skippedWords": 1228,
+   "onsetLateMeanMs": 8.8,
+   "onsetLateP95Ms": 16.3,
+   "onsetLateMaxMs": 16.9,
+   "durErrMeanAbsMs": 7.3,
+   "durErrP95AbsMs": 10,
+   "effectiveWpm": 300
+  },
+  {
+   "frames": "recorded",
+   "wpm": 500,
+   "words": 1332,
+   "skippedWords": 1163,
+   "onsetLateMeanMs": 8.9,
+   "onsetLateP95Ms": 16.4,
+   "onsetLateMaxMs": 17.4,
+   "durErrMeanAbsMs": 7.5,
+   "durErrP95AbsMs": 10.7,
+   "effectiveWpm": 500
+  },
+  {
+   "frames": "recorded",
+   "wpm": 800,
+   "words": 1332,
+   "skippedWords": 1060,
+   "onsetLateMeanMs": 8.7,
+   "onsetLateP95Ms": 16.7,
+   "onsetLateMaxMs": 17.4,
+   "durErrMeanAbsMs": 2.2,
+   "durErrP95AbsMs": 16.2,
+   "effectiveWpm": 800
+  }
+ ]
+}

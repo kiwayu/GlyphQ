@@ -1,4 +1,4 @@
-import { pickMissingMeta, needsEnrichment } from "../epubMeta";
+import { pickMissingMeta, needsEnrichment, titleIsFileName } from "../epubMeta";
 
 describe("needsEnrichment", () => {
   it("is true when the author is missing", () => {
@@ -36,5 +36,35 @@ describe("pickMissingMeta", () => {
 
   it("returns nothing when there is nothing to fill", () => {
     expect(pickMissingMeta(empty, { creator: "", publisher: "  " })).toEqual({});
+  });
+});
+
+describe("a title that is only the file name", () => {
+  const imported = {
+    title: "pg11-images-3",
+    file_path: "file:///data/books/pg11-images-3.epub",
+    authors: null,
+    publisher: null,
+    published_year: null,
+  };
+
+  it("is replaced by the book's own title", () => {
+    expect(pickMissingMeta(imported, { title: " Alice in Wonderland " }).title).toBe(
+      "Alice in Wonderland"
+    );
+  });
+
+  it("is recognised when storage renamed the file to avoid a clash", () => {
+    expect(titleIsFileName("My Great Book", "idb://books/My_Great_Book-1.epub")).toBe(true);
+  });
+
+  it("leaves a title somebody chose alone", () => {
+    const edited = { ...imported, title: "Alice (school copy)" };
+    expect(pickMissingMeta(edited, { title: "Alice in Wonderland" }).title).toBeUndefined();
+  });
+
+  it("leaves a book with no imported file alone", () => {
+    const fromSearch = { ...imported, file_path: null };
+    expect(pickMissingMeta(fromSearch, { title: "Alice in Wonderland" }).title).toBeUndefined();
   });
 });

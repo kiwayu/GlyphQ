@@ -53,7 +53,7 @@ Same harness, same three books, 5 runs each, 30 turns per phase. Median, with ra
 | Turn inside a chapter, turns with a dropped frame | Alice | 0 of 135 | 0 of 135 | same |
 | | Huck | 0 of 140 | 0 of 140 | same |
 | | Les Mis | 52 of 130 | 73 of 130 | no measurable difference: back to back, the original page dropped a frame on 45 and 43 of 78 turns and the new one on 43 and 42 of 78. The 52-against-73 gap is the machine drifting over the hours between the two sessions |
-| Turn across a chapter boundary, worst gap p95 | Alice / Les Mis / Huck | 133 / 67 / 83 ms | 100 / 83 / 83 ms | no measurable difference |
+| Turn across a chapter boundary, worst gap p95 | Alice / Les Mis / Huck | 133 / 67 / 83 ms | 100 / 83 / 83 ms | light: no measurable difference. **Dark, long book: one frame slower** (median 33 to 50 ms, back to back) |
 | Damaged file | | "Opening book…" for ever | error with "Back to library" | fixed |
 | Dark theme pictures | | inverted | true colours | fixed (checked in Chromium only) |
 

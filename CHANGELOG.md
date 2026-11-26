@@ -53,6 +53,8 @@ yet; it was measured and tested in Chromium.
 
 ### Removed
 - The session summary alert on closing a book.
+- The hidden pass that read a book's cover and author at import. The reader
+  reads them when the book first opens, which is now straight after import.
 - The highlights button. No highlight could be created, because the page's tap
   layer covers the text. The stored data is untouched.
 

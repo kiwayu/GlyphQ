@@ -1,6 +1,6 @@
 # Choices left to you
 
-No experiment settles these, so nothing below was decided. Each has options, a picture where a picture helps, and a recommendation. Everything else in this branch works whichever way you choose.
+No experiment settles these, so nothing below was decided. A few product-level calls did get made along the way (a removed button, a removed alert, the tab bar hiding while reading, speed meaning what it says); they are listed with how to reverse each at the top of `REPORT.md`. Each has options, a picture where a picture helps, and a recommendation. Everything else in this branch works whichever way you choose.
 
 ## 1. Visual identity
 

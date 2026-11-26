@@ -43,6 +43,8 @@ Ranked by how often a reader meets the problem on the default path (import, read
 | 32 | Picking an app theme did nothing on web | Taking the palette screenshots | localStorage and a page reload on web | done |
 | 33 | Library scrolling slows with library size: 60 fps at 100 books, 50 at 400, 21 at 1000 (4× throttle) | `perf/library-scroll.cjs` | Render only the rows near the screen | see report |
 | 34 | On a phone, a new app theme only applies after the app restarts (release builds have no `DevSettings.reload`) | Reading `theme.ts` | Not changed: styles are built once at start-up, so a live switch means reworking how every screen reads its colours | open |
+| 36 | "Recently Read" repeated every book already on "Currently Reading" | Screenshots | Leave books being read off the second shelf | done |
+| 37 | Import ran a hidden second load of the book to read its cover and author | Rewriting the Add flow | Removed `components/EpubExtractor.tsx`; the reader reads them on first open, which is now straight after import | done |
 | 35 | 20 `Alert.alert` calls are silent on web (delete confirmations, export results) | Flow audit | Not changed outside the core path | open |
 
 ## Left out on purpose

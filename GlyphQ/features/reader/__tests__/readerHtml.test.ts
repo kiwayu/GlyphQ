@@ -55,12 +55,12 @@ describe("buildReaderHtml — self-contained document", () => {
     expect(html).toContain("loc.start.displayed");
   });
 
-  it("themes the book with a CSS filter on #viewer (paint effect works over the cross-origin iframe)", () => {
-    // The book text lives in a cross-origin blob iframe we cannot touch. A CSS
-    // filter on the outer #viewer element is a paint effect the browser applies
-    // over the iframe regardless of origin — dark mode = invert the viewer.
-    expect(html).toContain("invert(1) hue-rotate(180deg)"); // dark/night
-    expect(html).toContain("style.filter");
+  it("paints theme colours into the book instead of filtering the page", () => {
+    // A filter inverts pictures along with the text. Colours go in through the
+    // content hook, and every named theme's palette ships in the page.
+    expect(html).not.toContain("invert(");
+    expect(html).toContain('"night":{"bg":"#000000"');
+    expect(html).toContain("background-color:transparent !important");
     expect(html).toContain(`padding:0 ${DEFAULT_SETTINGS.marginWidth}px`);
   });
 

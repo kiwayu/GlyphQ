@@ -4,7 +4,11 @@ import { defineConfig, devices } from "@playwright/test";
  * E2E suite against the Expo web build: the smoke tests (every tab renders)
  * and the core reading path (e2e/reader.spec.ts). The native file picker and
  * the native WebView are not exercised here; they need a device.
+ *
+ * PW_PORT runs the suite against a dev server on another port.
  */
+const port = Number(process.env.PW_PORT ?? 8090);
+
 export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.ts",
@@ -13,7 +17,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: [["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:8090",
+    baseURL: `http://localhost:${port}`,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     // PW_VIDEO=1 records every test; the flow recordings in docs/refine come from this.
@@ -21,8 +25,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npx expo start --web --port 8090",
-    url: "http://localhost:8090",
+    command: `npx expo start --web --port ${port}`,
+    url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 240_000, // first web bundle is slow
   },

@@ -1,0 +1,12 @@
+{
+ "label": "after",
+ "books": 400,
+ "domNodes": 4480,
+ "tabOpenMs": 761,
+ "scrolledPx": 36000,
+ "fps": 49.7,
+ "frameGapP50": 16.7,
+ "frameGapP95": 33.4,
+ "frameGapMax": 50.1,
+ "droppedPct": 17.4
+}

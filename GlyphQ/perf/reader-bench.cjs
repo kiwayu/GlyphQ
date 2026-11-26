@@ -21,7 +21,13 @@ require.extensions[".ts"] = (mod, file) =>
     }).outputText,
     file
   );
-const { buildReaderHtml, DEFAULT_SETTINGS } = require("../features/reader/readerHtml.ts");
+/* --page <file> benchmarks another copy of the reader page (for example the
+   pre-change one, checked out beside the current file). */
+const PAGE_FILE = (() => {
+  const i = process.argv.indexOf("--page");
+  return i === -1 ? "../features/reader/readerHtml.ts" : require("path").resolve(process.argv[i + 1]);
+})();
+const { buildReaderHtml, DEFAULT_SETTINGS } = require(PAGE_FILE);
 
 const args = process.argv.slice(2);
 const label = args[0] || "run";
@@ -38,6 +44,12 @@ const BOOKS = opt("books", "small-alice,large-lesmis").split(",");
    book a second time with the page numbers the first open produced. */
 const EXTRA_CSS = opt("css", "");
 const REOPEN = args.includes("--reopen");
+/* --strip removes a piece of the reader page, to measure what that piece costs.
+   --reuse-locations generates page numbers once per book and feeds them to
+   later runs, so steady-state turns can be measured without the long wait. */
+const STRIP = opt("strip", "");
+const REUSE = args.includes("--reuse-locations");
+const locationsFor = {};
 const ORIGIN = "http://bench.local";
 const FRAME = 1000 / 60;
 
@@ -54,12 +66,13 @@ async function oneRun(browser, book, savedLocations = null) {
   const cdp = await ctx.newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
 
-  const html = buildReaderHtml(
+  const built = buildReaderHtml(
     `${ORIGIN}/books/${book}.epub`,
     null,
     { ...DEFAULT_SETTINGS, theme: THEME },
     savedLocations
   ).replace("</style>", EXTRA_CSS + "</style>");
+  const html = STRIP ? built.split(STRIP).join("") : built;
   await page.route(`${ORIGIN}/**`, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/reader.html") {
@@ -159,8 +172,9 @@ async function oneRun(browser, book, savedLocations = null) {
   const results = [];
   for (let r = 0; r < RUNS; r++) {
     for (const book of BOOKS) {
-      const res = await oneRun(browser, book);
+      const res = await oneRun(browser, book, REUSE ? locationsFor[book] || null : null);
       res.run = r;
+      if (REUSE && res.locations) locationsFor[book] = res.locations;
       if (REOPEN && res.locations) {
         const again = await oneRun(browser, book, res.locations);
         res.reopenOpenMs = again.openMs;
@@ -202,7 +216,7 @@ async function oneRun(browser, book, savedLocations = null) {
       steadySectionChange: stat(pick("steady", true)),
     };
   }
-  const meta = { label, runs: RUNS, turns: TURNS, cpuThrottle: THROTTLE, theme: THEME, css: EXTRA_CSS || undefined, device: "Pixel 5 emulation, headless Chromium" };
+  const meta = { label, runs: RUNS, turns: TURNS, cpuThrottle: THROTTLE, theme: THEME, css: EXTRA_CSS || undefined, strip: STRIP || undefined, reuseLocations: REUSE || undefined, device: "Pixel 5 emulation, headless Chromium" };
   fs.mkdirSync(path.join(__dirname, "out"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "out", `reader-${label}.json`), JSON.stringify({ meta, summary, results }, null, 1));
   console.log(JSON.stringify({ meta, summary }, null, 1));

@@ -1,0 +1,106 @@
+{
+ "meta": {
+  "label": "exp-base",
+  "runs": 5,
+  "turns": 30,
+  "cpuThrottle": 4,
+  "theme": "light",
+  "device": "Pixel 5 emulation, headless Chromium"
+ },
+ "summary": {
+  "small-alice": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 517.5,
+    "min": 428.4,
+    "max": 597.3
+   },
+   "locationsMs": {
+    "median": 2557.9,
+    "min": 2403.8,
+    "max": 2765.4
+   },
+   "totalPages": 108,
+   "earlySamePage": {
+    "n": 140,
+    "turnMsP50": 51.3,
+    "turnMsP95": 60.6,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 5
+   },
+   "earlySectionChange": {
+    "n": 10,
+    "turnMsP50": 179.7,
+    "turnMsP95": 225.9,
+    "maxGapP50": 83.3,
+    "maxGapP95": 100,
+    "turnsWithDroppedFrame": 10
+   },
+   "steadySamePage": {
+    "n": 135,
+    "turnMsP50": 50.4,
+    "turnMsP95": 59.9,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 0
+   },
+   "steadySectionChange": {
+    "n": 15,
+    "turnMsP50": 151.8,
+    "turnMsP95": 170.9,
+    "maxGapP50": 66.7,
+    "maxGapP95": 100,
+    "turnsWithDroppedFrame": 15
+   }
+  },
+  "images-huckfinn": {
+   "runs": 5,
+   "errors": 0,
+   "openMs": {
+    "median": 1422.6,
+    "min": 1231.2,
+    "max": 1519.5
+   },
+   "locationsMs": {
+    "median": 8137.9,
+    "min": 7930.7,
+    "max": 8692.5
+   },
+   "totalPages": 394,
+   "earlySamePage": {
+    "n": 120,
+    "turnMsP50": 51.2,
+    "turnMsP95": 72.6,
+    "maxGapP50": 16.8,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 5
+   },
+   "earlySectionChange": {
+    "n": 30,
+    "turnMsP50": 112.9,
+    "turnMsP95": 214.9,
+    "maxGapP50": 49.9,
+    "maxGapP95": 100,
+    "turnsWithDroppedFrame": 16
+   },
+   "steadySamePage": {
+    "n": 140,
+    "turnMsP50": 51.2,
+    "turnMsP95": 62.7,
+    "maxGapP50": 16.7,
+    "maxGapP95": 16.8,
+    "turnsWithDroppedFrame": 0
+   },
+   "steadySectionChange": {
+    "n": 10,
+    "turnMsP50": 173.4,
+    "turnMsP95": 208.2,
+    "maxGapP50": 66.7,
+    "maxGapP95": 83.4,
+    "turnsWithDroppedFrame": 10
+   }
+  }
+ }
+}

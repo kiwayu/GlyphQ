@@ -23,7 +23,7 @@ const r1 = (x) => Math.round(x * 10) / 10;
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices["Pixel 5"] });
   const page = await ctx.newPage();
-  await page.goto("http://localhost:8090/");
+  await page.goto((process.env.APP_URL || "http://localhost:8090/"));
   await page.getByText("My Library").waitFor({ timeout: 240000 });
   const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByText("Add", { exact: true }).click()]);
   await chooser.setFiles(BOOK);

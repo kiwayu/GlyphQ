@@ -1,0 +1,12 @@
+{
+ "label": "oldscript-base-1000-2",
+ "books": 1000,
+ "domNodes": 10480,
+ "tabOpenMs": 1751,
+ "scrolledPx": 36000,
+ "fps": 20.7,
+ "frameGapP50": 50,
+ "frameGapP95": 83.3,
+ "frameGapMax": 266.6,
+ "droppedPct": 90.7
+}

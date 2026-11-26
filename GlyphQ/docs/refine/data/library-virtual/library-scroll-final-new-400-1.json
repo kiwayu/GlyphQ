@@ -1,0 +1,19 @@
+{
+ "label": "final-new-400-1",
+ "books": 400,
+ "domNodes": 650,
+ "domNodesEnd": 1722,
+ "tabOpenMs": 120,
+ "scrolledPx": 32844,
+ "scrollMaxPx": 32844,
+ "wheelSteps": 137,
+ "lastBook": "Z0389 Sample Title",
+ "lastBookOnScreen": true,
+ "blankSamples": "0/55",
+ "noImageSamples": "0/55",
+ "fps": 36.1,
+ "frameGapP50": 16.7,
+ "frameGapP95": 66.7,
+ "frameGapMax": 316.7,
+ "droppedPct": 10.9
+}

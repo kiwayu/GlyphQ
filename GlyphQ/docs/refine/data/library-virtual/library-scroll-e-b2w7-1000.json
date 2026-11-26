@@ -1,0 +1,18 @@
+{
+ "label": "e-b2w7-1000",
+ "books": 1000,
+ "domNodes": 617,
+ "domNodesEnd": 1040,
+ "tabOpenMs": 125,
+ "scrolledPx": 78743,
+ "scrollMaxPx": 78743,
+ "wheelSteps": 329,
+ "lastBook": "Z0987 Sample Title",
+ "lastBookOnScreen": true,
+ "blankSamples": "0/169",
+ "fps": 35.1,
+ "frameGapP50": 16.7,
+ "frameGapP95": 83.4,
+ "frameGapMax": 133.4,
+ "droppedPct": 22.2
+}

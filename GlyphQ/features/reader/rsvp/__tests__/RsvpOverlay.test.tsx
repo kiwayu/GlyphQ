@@ -285,6 +285,75 @@ describe("RsvpOverlay", () => {
     expect(onBackToChapter).toHaveBeenCalled();
   });
 
+  /* ── sentence stepping ─────────────────────────────── */
+
+  // [One two.] [Three four five.] [Six seven] (paragraph end) [Eight nine.]
+  const prose = tokenizeParagraphs(["One two. Three four five. Six seven", "Eight nine."]);
+  const at = (w: string) => prose.findIndex((t) => t.word === w);
+
+  function pressLabel(r: ReactTestRenderer, label: string) {
+    act(() => {
+      r.root.findByProps({ accessibilityLabel: label }).props.onPress();
+    });
+  }
+
+  function mountProse(startIndex: number) {
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={prose}
+          initialWpm={300}
+          startIndex={startIndex}
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    return r;
+  }
+
+  it("« restarts the current sentence, then steps back a sentence at a time", () => {
+    const r = mountProse(at("four"));
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("Three");
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("One");
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("One");
+  });
+
+  it("» jumps to the next sentence, across a paragraph end, and stops at the last word", () => {
+    const r = mountProse(at("One"));
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("Three");
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("Six");
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("Eight");
+    pressLabel(r, "Next sentence");
+    expect(word(r)).toBe("nine.");
+  });
+
+  it("keeps playing from the sentence start after «", () => {
+    const r = mountProse(at("Three"));
+    press(r, "rsvp-playpause");
+    // 9 words averaging 200ms = 1800ms; their multipliers sum to 15, so a
+    // plain word lasts 120ms: Three [0,120) four [120,240) five. [240,504).
+    clock = 300;
+    flushFrame();
+    expect(word(r)).toBe("five.");
+
+    pressLabel(r, "Previous sentence");
+    expect(word(r)).toBe("Three");
+    clock = 410; // 110ms after the press
+    flushFrame();
+    expect(word(r)).toBe("Three"); // the clock restarted at the sentence start
+    clock = 430; // 130ms after
+    flushFrame();
+    expect(word(r)).toBe("four"); // and playback carried on from there
+  });
+
   it("emits WPM changes to the parent", () => {
     const onWpmChange = jest.fn();
     let r!: ReactTestRenderer;

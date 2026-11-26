@@ -8,6 +8,9 @@ import {
   wordIndexAt,
   isFinished,
   totalDuration,
+  sentenceStart,
+  prevSentenceStart,
+  nextSentenceStart,
   PACING,
   type Token,
 } from "../engine";
@@ -317,6 +320,43 @@ describe("the wpm on screen is the real average", () => {
     const whole = durations(schedule(prose, WPM));
     const tail = durations(schedule(prose, WPM, from));
     tail.forEach((ms, i) => expect(ms).toBeCloseTo(whole[from + i]));
+  });
+});
+
+describe("sentence navigation", () => {
+  // Sentences: [He left.] [She said, “Wait for me.”] [Rain] [fell for hours.]
+  // "Rain" ends a sentence because it ends its paragraph.
+  const tokens = tokenizeParagraphs([
+    "He left. She said, “Wait for me.” Rain",
+    "fell for hours.",
+  ]);
+  const at = (word: string) => tokens.findIndex((t) => t.word === word);
+  const wordAt = (i: number) => tokens[i]?.word;
+
+  it("finds the start of the sentence containing a word", () => {
+    expect(wordAt(sentenceStart(tokens, at("for")))).toBe("She");
+    expect(wordAt(sentenceStart(tokens, at("me.”")))).toBe("She");
+    expect(wordAt(sentenceStart(tokens, at("She")))).toBe("She");
+    expect(wordAt(sentenceStart(tokens, at("left.")))).toBe("He");
+    expect(wordAt(sentenceStart(tokens, at("hours.")))).toBe("fell");
+  });
+
+  it("finds the previous sentence start, stopping at the first sentence", () => {
+    expect(wordAt(prevSentenceStart(tokens, at("said,")))).toBe("He");
+    expect(wordAt(prevSentenceStart(tokens, at("hours.")))).toBe("Rain");
+    expect(wordAt(prevSentenceStart(tokens, at("left.")))).toBe("He");
+  });
+
+  it("finds the next sentence start, across a paragraph end", () => {
+    expect(wordAt(nextSentenceStart(tokens, at("He")))).toBe("She");
+    expect(wordAt(nextSentenceStart(tokens, at("left.")))).toBe("She");
+    expect(wordAt(nextSentenceStart(tokens, at("said,")))).toBe("Rain");
+    expect(wordAt(nextSentenceStart(tokens, at("Rain")))).toBe("fell");
+  });
+
+  it("points past the end from the last sentence", () => {
+    expect(nextSentenceStart(tokens, at("hours."))).toBe(tokens.length);
+    expect(nextSentenceStart(tokens, at("fell"))).toBe(tokens.length);
   });
 });
 

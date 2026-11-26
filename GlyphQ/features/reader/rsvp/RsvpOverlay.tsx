@@ -23,6 +23,9 @@ import {
   wordIndexAt,
   isFinished,
   splitOrp,
+  sentenceStart,
+  prevSentenceStart,
+  nextSentenceStart,
   type Schedule,
   type Token,
 } from "./engine";
@@ -31,7 +34,6 @@ const WPM_MIN = 100;
 const WPM_MAX = 900;
 const WPM_STEP = 25;
 const PRESETS = [250, 350, 450, 600];
-const SEEK_WORDS = 5;
 
 /* Chapter intro hold, measured in word slots rather than milliseconds: a fixed
    2s reads as a stall at 250 WPM and a jolt at 600. Clamped so it stays a beat
@@ -220,10 +222,10 @@ export default function RsvpOverlay({
     [tokens, count, clampIndex, onWpmChange]
   );
 
-  const seek = useCallback(
-    (delta: number) => {
+  const seekTo = useCallback(
+    (target: number) => {
       if (count === 0) return;
-      const next = clampIndex(indexRef.current + delta);
+      const next = clampIndex(target);
       indexRef.current = next;
       setIndex(next);
       setFinished(false);
@@ -231,6 +233,20 @@ export default function RsvpOverlay({
       clockStartRef.current = now();
     },
     [tokens, count, clampIndex]
+  );
+
+  /* Step by sentence: re-reading is what RSVP takes away, and a sentence is
+     the unit a reader wants back. « restarts the current sentence, or goes to
+     the previous one when already at its start. */
+  const sentenceBack = useCallback(() => {
+    const at = indexRef.current;
+    const start = sentenceStart(tokens, at);
+    seekTo(at > start ? start : prevSentenceStart(tokens, at));
+  }, [tokens, seekTo]);
+
+  const sentenceForward = useCallback(
+    () => seekTo(nextSentenceStart(tokens, indexRef.current)),
+    [tokens, seekTo]
   );
 
   const restart = useCallback(() => {
@@ -500,9 +516,11 @@ export default function RsvpOverlay({
         <View style={st.controls}>
           <Pressable
             style={[st.ctrlBtn, advancing && st.disabled]}
-            onPress={() => seek(-SEEK_WORDS)}
+            onPress={sentenceBack}
             disabled={advancing}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Previous sentence"
           >
             <Text style={[st.ctrlTxt, { color: colors.fg }]}>«</Text>
           </Pressable>
@@ -524,9 +542,11 @@ export default function RsvpOverlay({
 
           <Pressable
             style={[st.ctrlBtn, advancing && st.disabled]}
-            onPress={() => seek(SEEK_WORDS)}
+            onPress={sentenceForward}
             disabled={advancing}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Next sentence"
           >
             <Text style={[st.ctrlTxt, { color: colors.fg }]}>»</Text>
           </Pressable>

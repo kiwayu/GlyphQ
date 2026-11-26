@@ -234,6 +234,36 @@ export function schedule(
   return { offset: fromIndex, cumEnd };
 }
 
+/* ── Sentences ──────────────────────────────────────────────────── */
+
+/** A sentence ends at sentence-end punctuation or at a paragraph end. */
+function endsSentence(token: Token): boolean {
+  return token.isParagraphEnd || SENTENCE_END.test(token.word);
+}
+
+/** Index of the first token of the sentence containing `index`. */
+export function sentenceStart(tokens: Token[], index: number): number {
+  let i = index;
+  while (i > 0 && !endsSentence(tokens[i - 1])) i--;
+  return i;
+}
+
+/** Start of the sentence before the one containing `index`; 0 in the first. */
+export function prevSentenceStart(tokens: Token[], index: number): number {
+  const start = sentenceStart(tokens, index);
+  return start === 0 ? 0 : sentenceStart(tokens, start - 1);
+}
+
+/**
+ * Start of the sentence after the one containing `index`, or tokens.length
+ * when that sentence is the last.
+ */
+export function nextSentenceStart(tokens: Token[], index: number): number {
+  let i = index;
+  while (i < tokens.length && !endsSentence(tokens[i])) i++;
+  return Math.min(i + 1, tokens.length);
+}
+
 /**
  * Absolute token index that should be visible at `elapsedMs` since the
  * schedule's clock origin. Binary search; clamps past-the-end to the

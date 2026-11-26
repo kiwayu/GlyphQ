@@ -64,6 +64,15 @@ describe("buildReaderHtml — self-contained document", () => {
     expect(html).toContain(`padding:0 ${DEFAULT_SETTINGS.marginWidth}px`);
   });
 
+  it("keeps book-derived values from closing the inline script", () => {
+    // A CFI carries element ids from the book. One that spells a closing
+    // script tag must stay inside its string.
+    const hostile = 'epubcfi(/6/4[x</script><script>alert(1)</script>]!/4/2)';
+    const out = buildReaderHtml("file:///b.epub", hostile, DEFAULT_SETTINGS, JSON.stringify([hostile]));
+    expect(out).not.toContain("<script>alert(1)");
+    expect(out.split("</script>")).toHaveLength(html.split("</script>").length);
+  });
+
   it("re-paginates via resize + display when a layout setting changes", () => {
     expect(html).toContain("rendition.resize");
     expect(html).toContain("rendition.display");

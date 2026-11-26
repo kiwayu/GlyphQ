@@ -27,6 +27,17 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   marginWidth: 20,
 };
 
+/**
+ * JSON that is safe inside an inline <script>. A saved position and the cached
+ * page numbers are CFIs, and a CFI carries element ids taken from the book, so
+ * a crafted EPUB could put "</script>" in one and break out of the script.
+ * Escaping "<" keeps the value inside its string.
+ */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c");
+}
+
 export function buildReaderHtml(
   epubUrl:    string,
   initialCfi: string | null,
@@ -40,10 +51,10 @@ export function buildReaderHtml(
       Object.entries(READER_THEMES).map(([k, v]) => [k, { bg: v.bg, fg: v.fg, link: v.link }])
     )
   );
-  const cfiArg      = initialCfi ? JSON.stringify(initialCfi) : "null";
-  const urlArg      = JSON.stringify(epubUrl);
-  const locationsArg = savedLocations ? JSON.stringify(savedLocations) : "null";
-  const settingsArg = JSON.stringify(settings);
+  const cfiArg      = initialCfi ? scriptJson(initialCfi) : "null";
+  const urlArg      = scriptJson(epubUrl);
+  const locationsArg = savedLocations ? scriptJson(savedLocations) : "null";
+  const settingsArg = scriptJson(settings);
 
   return `<!DOCTYPE html>
 <html><head>

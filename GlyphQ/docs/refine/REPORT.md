@@ -115,7 +115,28 @@ Before is read from the code at `22f95e9` (the web build could not run these flo
 | Does hyphenation slow the page? | Benchmark with and without the rule | 58 vs 54 of 104 turns; open 1272 vs 1304 ms | No measurable difference. Kept for the typography. |
 | Normalise speed so the label is true? | Engine change, checked in the harness | 265 to 300, 442 to 500, 706 to 800 | **Kept.** |
 | Splitting `ReaderScreen.tsx` to cut re-renders | Split into the screen (1082 lines) and two sheets (459 lines); it was 1889 | Not measured: the old screen could not run on web, so there is no before | Kept for readability. No speed claim. |
-| List virtualisation for the library | LIBRARY | | |
+| List virtualisation for the library | The whole screen as one `FlatList`, a row of covers per item (branch `refine/library-virtual`, own PR) | Better at 1000 books, worse at 100 and 400: see Library below | **Not merged.** Needs a phone to judge. |
+
+## Library scrolling
+
+There is no "before" from the start of the run: the web build could not add books then. These are the current library and a virtualised version, measured in the same session, alternating, 3 runs each (medians), scrolling the whole Done tab at 4× throttle. `data/library-virtual/`.
+
+| Books | Version | fps | Frames dropped | Worst hitch | Done tab opens in |
+|---|---|---|---|---|---|
+| 100 | today | 58.1 | 3.4% | 33 ms | 283 ms |
+| 100 | virtualised | 39 | 12–13% | 233–267 ms | 115–141 ms |
+| 400 | today | 48.8 | 17.2% | 83 ms | 726 ms |
+| 400 | virtualised | 36.2 | 11.5% | 333 ms | 123 ms |
+| 1000 | today | 18.2 | 57.5% | 267 ms | 1544 ms |
+| 1000 | virtualised | 35.3 | 11.2% | 433 ms | 146 ms |
+
+(The 100-book virtualised row is my own re-check, 2 runs; the rest are the subagent's.)
+
+Today's library mounts every cover at once, so it opens slowly and scrolls well until there are too many covers. The virtualised one opens fast at any size and mounts covers as you scroll, which on this target costs a visible hitch each time a batch of rows mounts. A profile says most of that is `expo-image` on web taking three renders per cover; with covers drawn as plain boxes the same scroll drops 4.6%. A hybrid (mount everything up to about 500 books, virtualise above) was also tried and was worse than today at 100 and 400 books, because the list component itself adds work while scrolling.
+
+**Recommendation: keep today's library for now.** Most libraries are well under 400 books, where today's version scrolls better. The virtualised version is finished, tested, and sits on its own branch and PR for you to try on a phone, where image mounting is a different cost. If your library is in the high hundreds, it is the better trade already.
+
+One thing found on the way: on a phone-width screen today's grid shows 2 covers per row with uneven widths. The code asks for 3; a gap pushes the third onto the next line. The virtualised branch shows 3. I left today's grid alone because fixing it makes every cover smaller, which is a look you should choose.
 
 ## Animations
 
@@ -155,7 +176,7 @@ Unverified, or changed in ways you should know:
 - **Everything native.** None of this was run on Android or iOS. Native code paths that changed: the reader screen and its page, the library Add flow, the database open, Reanimated layout animations for bars and sheets, the status-tab bounce (now a Reanimated spring), hiding the tab bar, AsyncStorage for page numbers, and Settings import and export, which now call the file-system helpers from `expo-file-system/legacy` (the entry the rest of the app already uses). All type-check and pass jest; none has been seen on a device.
 - **The dark-theme fallback is gone.** Colours are painted through epub.js's content hook, which is what the default "match app" theme already used. The old filter worked even if a device blocked access to the book frame. If dark text ever shows on a dark page on a phone, this is where to look.
 - **Highlights.** The button is removed because no highlight could be created. The data and service remain.
-- **Library scroll.** LIBRARY_NOTE
+- **Library scroll is not fixed.** See the Library section above: it is smooth at 100 books and poor at 1000, and the fix that helps at 1000 hurts at 100 on this target.
 - **Cold start** was not measured.
 - **Competitor apps** were studied from their official documentation, not from recordings. Durations and easing curves for their animations are not published; none are quoted.
 

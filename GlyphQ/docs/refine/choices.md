@@ -45,6 +45,13 @@ Options: follow the app theme (today), always Sepia, always Light. Recommendatio
 | Session summary on closing a book | Removed (it was a blocking alert) | Leave out, or bring back as a line on the library card | **Leave out.** |
 | "⚡ Speed reading" bookmark | Kept, one per book, replaced each time | Keep, or drop now that exit lands on the word | **Keep.** |
 
+## 4b. Library grid
+
+| Choice | Options | Recommendation |
+|---|---|---|
+| Covers per row on a phone | 2 (what shows today, with uneven widths because of a layout bug), or 3 (what the code asks for) | **3 if you want more books per screen, 2 if you want bigger covers.** Either way the widths should be made even. |
+| Virtualised library list | Keep today's (smooth up to a few hundred books, slow to open and scroll at 1000), or merge `refine/library-virtual` (opens instantly at any size, hitches while scrolling on web) | **Try the branch on a phone before deciding.** Numbers are in `REPORT.md`. |
+
 ## 5. Tab structure
 
 | Option | Tabs | Notes |

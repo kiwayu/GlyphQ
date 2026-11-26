@@ -41,7 +41,7 @@ Ranked by how often a reader meets the problem on the default path (import, read
 | 30 | Settings offered five fonts the reader does not have, and not Charter, which it does | Wiring saved appearance to the reader | Settings lists the reader's four fonts | done |
 | 31 | Settings > Import library imported nothing on web and never refreshed the library | Seeding a library to measure scrolling | Read the picked file; reload the library store | done |
 | 32 | Picking an app theme did nothing on web | Taking the palette screenshots | localStorage and a page reload on web | done |
-| 33 | Library scrolling slows with library size: 60 fps at 100 books, 50 at 400, 21 at 1000 (4× throttle) | `perf/library-scroll.cjs` | Render only the rows near the screen | see report |
+| 33 | Library scrolling slows with library size: 58 fps at 100 books, 49 at 400, 18 at 1000 (4× throttle, whole list) | `perf/library-scroll.cjs` | Render only the rows near the screen | built, measured, **not merged**: better at 1000 books, worse at 100 and 400; on branch `refine/library-virtual` |
 | 34 | On a phone, a new app theme only applies after the app restarts (release builds have no `DevSettings.reload`) | Reading `theme.ts` | Not changed: styles are built once at start-up, so a live switch means reworking how every screen reads its colours | open |
 | 36 | "Recently Read" repeated every book already on "Currently Reading" | Screenshots | Leave books being read off the second shelf | done |
 | 37 | Import ran a hidden second load of the book to read its cover and author | Rewriting the Add flow | Removed `components/EpubExtractor.tsx`; the reader reads them on first open, which is now straight after import | done |

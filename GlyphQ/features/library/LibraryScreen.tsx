@@ -527,7 +527,11 @@ export default function LibraryScreen() {
   const handleScrollToIndexFailed = useCallback(
     ({ index, averageItemLength }: { index: number; averageItemLength: number }) => {
       listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false });
-      setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 50);
+      setTimeout(() => {
+        // The rows can change before this runs, and an index past the end throws.
+        const list = listRef.current;
+        if (list && index < (list.props.data?.length ?? 0)) list.scrollToIndex({ index, animated: false });
+      }, 50);
     }, []);
 
   const renderRow = useCallback(({ item }: ListRenderItemInfo<Row>) => {

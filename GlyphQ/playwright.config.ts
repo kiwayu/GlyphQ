@@ -16,6 +16,8 @@ export default defineConfig({
     baseURL: "http://localhost:8090",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    // PW_VIDEO=1 records every test; the flow recordings in docs/refine come from this.
+    video: process.env.PW_VIDEO ? "on" : "off",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

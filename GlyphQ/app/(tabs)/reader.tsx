@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useNavigation } from "expo-router";
 import { useLibraryStore } from "@/store/libraryStore";
 import { setEpubPath, removeEpubPath } from "@/services/epubPaths";
 import { resolveBookSource } from "@/services/importBook";
@@ -23,11 +23,27 @@ import { t } from "@/theme";
 
 export default function ReaderTab() {
   const currentBook = useLibraryStore((s) => s.currentBook);
+  const loadLibrary = useLibraryStore((s) => s.loadLibrary);
+
+  /* The last-read book is restored by the first library load. That load is
+     normally the Library tab's, but this tab can be the first one shown (a
+     deep link, or a reload on the web), so it asks too. */
+  useEffect(() => {
+    if (!useLibraryStore.getState().currentBook) loadLibrary();
+  }, [loadLibrary]);
   const router      = useRouter();
 
   const [epubUrl,   setEpubUrl]   = useState<string | null>(null);
   const [urlInput,  setUrlInput]  = useState("");
   const [urlError,  setUrlError]  = useState<string | null>(null);
+
+  /* A book on screen owns the whole screen: the tab bar goes away while one
+     is open and returns with the library. */
+  const navigation = useNavigation();
+  const reading = !!(currentBook && epubUrl);
+  useLayoutEffect(() => {
+    navigation.setOptions({ tabBarStyle: reading ? { display: "none" } : undefined });
+  }, [navigation, reading]);
 
   /* load saved epub path when the selected book changes */
   useEffect(() => {
@@ -80,9 +96,11 @@ export default function ReaderTab() {
     }
   }, [currentBook]);
 
+  /* Closing a book returns to the library. The book stays selected, so the
+     Reader tab reopens it where it was left. */
   const handleClose = useCallback(() => {
-    setEpubUrl(null);
-  }, []);
+    router.navigate("/(tabs)");
+  }, [router]);
 
   const handleRemove = useCallback(async () => {
     if (!currentBook) return;

@@ -4,9 +4,10 @@
  * with the wheel under 4x CPU throttle, and reports frame gaps.
  *
  * The wheel keeps going until the list is at its end, so a longer list is
- * scrolled in full. Every 10 steps it checks whether any book is under three
- * points of the screen (a list that renders lazily can show blank space), and
- * at the end it checks that the last book in A-Z order is on screen.
+ * scrolled in full. Every 200 ms it checks whether any book is under three
+ * points of the screen, and whether that book shows its cover image (a list
+ * that renders lazily can show blank space or empty covers). At the end it
+ * checks that the last book in A-Z order is on screen.
  *
  *   node perf/library-scroll.cjs [label] [books=400]     (dev server on :8090)
  */
@@ -63,14 +64,17 @@ for (let i = 1; i <= N; i++) {
     const els = [...document.querySelectorAll("*")].filter((e) => e.scrollHeight > e.clientHeight && /auto|scroll/.test(getComputedStyle(e).overflowY));
     window.__list = els.sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
     window.__f = [];
-    window.__blank = { samples: 0, blank: 0 };
+    window.__blank = { samples: 0, blank: 0, noImage: 0 };
     const tick = (t) => { if (window.__stop) return; window.__f.push(t); requestAnimationFrame(tick); };
     requestAnimationFrame(tick);
     const pts = [[w * 0.25, h * 0.3], [w * 0.25, h * 0.5], [w * 0.25, h * 0.7]];
     const sample = setInterval(() => {
       if (window.__stop) return clearInterval(sample);
-      const book = pts.some(([x, y]) => /Sample Title/.test(document.elementFromPoint(x, y)?.closest('[tabindex="0"]')?.textContent ?? ""));
-      window.__blank.samples++; if (!book) window.__blank.blank++;
+      const cells = pts.map(([x, y]) => document.elementFromPoint(x, y)?.closest('[tabindex="0"]'))
+        .filter((c) => /Sample Title/.test(c?.textContent ?? ""));
+      window.__blank.samples++;
+      if (cells.length === 0) window.__blank.blank++;
+      else if (cells.some((c) => !c.querySelector("img"))) window.__blank.noImage++; // every seeded book has a cover
     }, 200);
   }, { w: vp.width, h: vp.height });
   const stepsLeft = () => page.evaluate(() => { const s = window.__list; return Math.ceil((s.scrollHeight - s.clientHeight - s.scrollTop) / 240); });
@@ -104,7 +108,7 @@ for (let i = 1; i <= N; i++) {
     label, books: N, domNodes: nodes, domNodesEnd, tabOpenMs,
     scrolledPx: Math.round(scrolled), scrollMaxPx: Math.round(scrollMax), wheelSteps: steps,
     lastBook: lastTitle, lastBookOnScreen: !!lastBox && lastBox.y >= listTop && lastBox.y + lastBox.height <= listBottom,
-    blankSamples: `${blank.blank}/${blank.samples}`,
+    blankSamples: `${blank.blank}/${blank.samples}`, noImageSamples: `${blank.noImage}/${blank.samples}`,
     fps: r1((gaps.length / span) * 1000),
     frameGapP50: r1(q(gaps, 0.5)), frameGapP95: r1(q(gaps, 0.95)), frameGapMax: r1(Math.max(...gaps)),
     droppedPct: r1((100 * gaps.filter((g) => g > FRAME * 1.5).length) / gaps.length),

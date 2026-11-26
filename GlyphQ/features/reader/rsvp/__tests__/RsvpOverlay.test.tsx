@@ -5,6 +5,8 @@
  * Maestro journey for this is deferred — see TODOS.md #4).
  */
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { AccessibilityInfo, StyleSheet } from "react-native";
+import { getAnimatedStyle } from "react-native-reanimated";
 import RsvpOverlay from "../RsvpOverlay";
 import { tokenizeParagraphs } from "../engine";
 
@@ -28,7 +30,22 @@ let rafCbs: FrameRequestCallback[] = [];
 beforeEach(() => {
   clock = 0;
   rafCbs = [];
+  // Reanimated hands work to its UI runtime with setTimeout(0) under jest.
+  // Faking only the timer queue lets each frame below run it in step with the
+  // clock, while Date, performance and rAF stay under this file's control.
+  jest.useFakeTimers({
+    doNotFake: [
+      "Date",
+      "performance",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+      "nextTick",
+      "queueMicrotask",
+    ],
+  });
   jest.spyOn(Date, "now").mockImplementation(() => clock);
+  // Reanimated stamps animation starts with performance.now().
+  jest.spyOn(performance, "now").mockImplementation(() => clock);
   global.requestAnimationFrame = ((cb: FrameRequestCallback) => {
     rafCbs.push(cb);
     return rafCbs.length;
@@ -36,14 +53,38 @@ beforeEach(() => {
   global.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
 });
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.clearAllTimers();
+  jest.useRealTimers();
+  jest.restoreAllMocks();
+});
 
 function flushFrame() {
   const cbs = rafCbs;
   rafCbs = [];
   act(() => {
+    jest.runOnlyPendingTimers();
     cbs.forEach((cb) => cb(clock));
+    jest.runOnlyPendingTimers();
   });
+}
+
+/** Run the frame loop for `ms`, one 16ms frame at a time. */
+function advance(ms: number) {
+  const end = clock + ms;
+  while (clock < end) {
+    clock = Math.min(end, clock + 16);
+    flushFrame();
+  }
+}
+
+/** Opacity the reader sees on a view, as Reanimated last set it. */
+function opacity(r: ReactTestRenderer, testID: string): number {
+  const host = r.root.find(
+    (n) => n.props.testID === testID && typeof n.type === "string"
+  );
+  const o = getAnimatedStyle(host).opacity;
+  return typeof o === "number" ? o : 1;
 }
 
 function word(r: ReactTestRenderer): string {
@@ -352,6 +393,129 @@ describe("RsvpOverlay", () => {
     clock = 430; // 130ms after
     flushFrame();
     expect(word(r)).toBe("four"); // and playback carried on from there
+  });
+
+  /* ── sentence on pause ─────────────────────────────── */
+
+  function textOf(node: { children: unknown[] }): string {
+    return node.children
+      .map((c) => (typeof c === "string" ? c : textOf(c as { children: unknown[] })))
+      .join("");
+  }
+
+  function sentenceBox(r: ReactTestRenderer) {
+    return r.root.find(
+      (n) => n.props.testID === "rsvp-sentence" && typeof n.type === "string"
+    );
+  }
+
+  /** The sentence as shown, and which part of it is in the main colour. */
+  function sentence(r: ReactTestRenderer) {
+    const box = sentenceBox(r);
+    const highlighted = box
+      .findAll(
+        (n) =>
+          typeof n.type === "string" &&
+          StyleSheet.flatten(n.props.style)?.color === colors.fg
+      )
+      .map(textOf);
+    return { text: textOf(box), highlighted };
+  }
+
+  it("shows the current sentence under the word while paused", () => {
+    const r = mountProse(at("four"));
+    expect(sentence(r)).toEqual({
+      text: "Three four five.",
+      highlighted: ["four"],
+    });
+    expect(opacity(r, "rsvp-sentence")).toBe(1);
+  });
+
+  it("fades the sentence out while playing and back in, on the new word, when paused", () => {
+    const r = mountProse(at("Three"));
+    press(r, "rsvp-playpause");
+    advance(70); // mid-fade
+    expect(opacity(r, "rsvp-sentence")).toBeGreaterThan(0);
+    expect(opacity(r, "rsvp-sentence")).toBeLessThan(1);
+    advance(100); // 170ms in: faded out, now on "four" (plain words last 120ms)
+    expect(opacity(r, "rsvp-sentence")).toBe(0);
+    expect(word(r)).toBe("four");
+
+    press(r, "rsvp-playpause"); // pause on "four"
+    expect(sentence(r).highlighted).toEqual(["four"]);
+    advance(160);
+    expect(opacity(r, "rsvp-sentence")).toBe(1);
+  });
+
+  it("keeps the sentence's space while hidden, so the focus word never moves", () => {
+    const r = mountProse(at("Three"));
+    const layout = () => {
+      const { opacity: _o, ...rest } = StyleSheet.flatten(sentenceBox(r).props.style);
+      return rest;
+    };
+    const paused = layout();
+    expect(paused.height).toBeGreaterThan(0);
+    press(r, "rsvp-playpause");
+    advance(200);
+    expect(opacity(r, "rsvp-sentence")).toBe(0);
+    expect(layout()).toEqual(paused);
+  });
+
+  it("joins em-dash halves back into one word", () => {
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={tokenizeParagraphs(["It was war—peace again."])}
+          initialWpm={300}
+          startIndex={3}
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    expect(sentence(r)).toEqual({
+      text: "It was war—peace again.",
+      highlighted: ["peace"],
+    });
+  });
+
+  it("cuts a long sentence to a window that keeps the current word in view", () => {
+    const words = Array.from({ length: 60 }, (_, i) => `w${i}`);
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <RsvpOverlay
+          tokens={tokenizeParagraphs([words.join(" ") + "."])}
+          initialWpm={300}
+          startIndex={40}
+          colors={colors}
+          onClose={() => {}}
+        />
+      );
+    });
+    const { text, highlighted } = sentence(r);
+    expect(highlighted).toEqual(["w40"]);
+    // Eight words of lead-in keep the current word on the box's first lines,
+    // where the line limit cannot clip it, with ellipses where it is cut.
+    expect(text.startsWith("… w32 w33 w34 w35 w36 w37 w38 w39 w40 ")).toBe(true);
+    expect(text.endsWith(" …")).toBe(true);
+  });
+
+  it("shows and hides the sentence at once when reduce motion is on", async () => {
+    // React Native's jest setup already mocks this; spyOn would hand back that
+    // shared mock and leak the value into later tests. Once is one mount.
+    jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(true);
+    const r = mountProse(at("Three"));
+    await act(async () => {}); // let the setting load
+
+    press(r, "rsvp-playpause");
+    flushFrame(); // one frame, no time passing
+    expect(opacity(r, "rsvp-sentence")).toBe(0);
+
+    press(r, "rsvp-playpause");
+    flushFrame();
+    expect(opacity(r, "rsvp-sentence")).toBe(1);
   });
 
   it("emits WPM changes to the parent", () => {

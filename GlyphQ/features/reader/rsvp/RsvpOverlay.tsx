@@ -18,6 +18,11 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import {
   schedule,
   wordIndexAt,
@@ -45,6 +50,50 @@ const INTRO_MAX_MS = 2500;
 function introHoldMs(wpm: number): number {
   const raw = INTRO_WORD_SLOTS * (60000 / wpm);
   return Math.max(INTRO_MIN_MS, Math.min(INTRO_MAX_MS, raw));
+}
+
+/* Opacity fades only, short enough never to make a reader wait. */
+const FADE_MS = 150;
+
+/* The paused sentence gets a fixed box of SENTENCE_LINES lines. A long
+   sentence is cut to a window that keeps the current word near its start, so
+   the word always lands inside the box. */
+const SENTENCE_LINES = 3;
+const SENTENCE_LINE_HEIGHT = 22;
+const SENTENCE_LEAD = 8; // words kept before the current one
+const SENTENCE_SPAN = 24; // words shown at most
+
+interface SentenceParts {
+  before: string;
+  current: string;
+  after: string;
+}
+
+/** The sentence around tokens[index], split so the current word can be coloured. */
+function sentenceAround(tokens: Token[], index: number): SentenceParts {
+  const start = sentenceStart(tokens, index);
+  const end = nextSentenceStart(tokens, index);
+  const from = Math.max(start, index - SENTENCE_LEAD);
+  const to = Math.min(end, Math.max(index + 1, from + SENTENCE_SPAN));
+  // Em-dash halves come from one page word and rejoin without a space.
+  const gap = (i: number) =>
+    tokens[i].sourceWord === tokens[i - 1].sourceWord ? "" : " ";
+  const join = (a: number, b: number) => {
+    let out = "";
+    for (let i = a; i < b; i++) out += (i > a ? gap(i) : "") + tokens[i].word;
+    return out;
+  };
+  return {
+    before:
+      (from > start ? "… " : "") +
+      join(from, index) +
+      (index > from ? gap(index) : ""),
+    current: tokens[index].word,
+    after:
+      (index + 1 < to ? gap(index + 1) : "") +
+      join(index + 1, to) +
+      (to < end ? " …" : ""),
+  };
 }
 
 const MONO = Platform.select({
@@ -323,6 +372,30 @@ export default function RsvpOverlay({
   const nextWord =
     index + 1 < count && slot === "word" ? tokens[index + 1].word : "";
   const parts = useMemo(() => splitOrp(currentWord), [currentWord]);
+
+  /* Paused in the word slot, the sentence shows under the stage so the reader
+     can find their place. Its box is always mounted and only its opacity
+     changes, so the focus word never moves. While playing it keeps the
+     sentence it last showed: nothing re-renders behind a transparent box, and
+     the fade-out shows what the reader was looking at. */
+  const showSentence = slot === "word" && !playing;
+  const [sentenceAt, setSentenceAt] = useState(index);
+  if (showSentence && sentenceAt !== index) setSentenceAt(index);
+  const sentence = useMemo(
+    () => (count > 0 ? sentenceAround(tokens, clampIndex(sentenceAt)) : null),
+    [tokens, count, clampIndex, sentenceAt]
+  );
+  const sentenceOpacity = useSharedValue(showSentence ? 1 : 0);
+  useEffect(() => {
+    const to = showSentence ? 1 : 0;
+    sentenceOpacity.set(
+      a11y.reduceMotion ? to : withTiming(to, { duration: FADE_MS })
+    );
+  }, [showSentence, a11y.reduceMotion, sentenceOpacity]);
+  const sentenceStyle = useAnimatedStyle(() => ({
+    opacity: sentenceOpacity.get(),
+  }));
+
   /* During the intro the track is the countdown, so the resume reads as caused
      rather than random. Same pixels, no extra chrome. */
   const progressPct =
@@ -469,6 +542,24 @@ export default function RsvpOverlay({
           </Text>
         )}
       </Pressable>
+
+      <Animated.View
+        testID="rsvp-sentence"
+        style={[st.sentenceBox, sentenceStyle]}
+        accessibilityElementsHidden={!showSentence}
+        importantForAccessibility={showSentence ? "auto" : "no-hide-descendants"}
+      >
+        {sentence && (
+          <Text
+            style={[st.sentenceTxt, { color: colors.sub }]}
+            numberOfLines={SENTENCE_LINES}
+          >
+            {sentence.before}
+            <Text style={{ color: colors.fg }}>{sentence.current}</Text>
+            {sentence.after}
+          </Text>
+        )}
+      </Animated.View>
 
       {/* Progress */}
       <View style={st.progressWrap}>
@@ -733,6 +824,16 @@ const st = StyleSheet.create({
     position: "absolute",
     bottom: 24,
     fontSize: 13,
+  },
+  sentenceBox: {
+    height: SENTENCE_LINES * SENTENCE_LINE_HEIGHT,
+    paddingHorizontal: 24,
+    marginBottom: 12,
+  },
+  sentenceTxt: {
+    fontSize: 15,
+    lineHeight: SENTENCE_LINE_HEIGHT,
+    textAlign: "center",
   },
 
   /* progress */

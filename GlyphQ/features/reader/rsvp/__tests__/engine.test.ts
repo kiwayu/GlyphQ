@@ -232,20 +232,29 @@ describe("durationFor", () => {
   });
 });
 
+/** How long each scheduled word stays on screen. */
+const durations = (s: { cumEnd: number[] }) =>
+  s.cumEnd.map((end, i) => end - (i === 0 ? 0 : s.cumEnd[i - 1]));
+
 describe("schedule / wordIndexAt", () => {
-  const tokens = tokenizeParagraphs(["one two three four"]); // 4 plain... "four" is paragraph end
+  const tokens = tokenizeParagraphs(["one two three four"]); // "four" is the paragraph end
   const sched = schedule(tokens, WPM);
+  // 4 words at 300 WPM average 200ms each: 800ms in all. "four" holds 2.8x
+  // as long as each plain word, so a plain word gets 800 / 5.8 ms.
+  const PLAIN = 800 / (3 + PACING.PARAGRAPH_PAUSE);
 
   it("builds cumulative end times", () => {
-    // one(200) two(200) three(200) four(paragraph end: 200*2.8)
-    expect(sched.cumEnd).toEqual([200, 400, 600, 600 + 200 * 2.8]);
+    expect(sched.cumEnd).toHaveLength(4);
+    [PLAIN, 2 * PLAIN, 3 * PLAIN, 800].forEach((end, i) =>
+      expect(sched.cumEnd[i]).toBeCloseTo(end)
+    );
   });
 
   it("selects the visible word by elapsed time", () => {
     expect(wordIndexAt(sched, 0)).toBe(0);
-    expect(wordIndexAt(sched, 199.9)).toBe(0);
-    expect(wordIndexAt(sched, 200)).toBe(1); // boundary: word 0 ends AT 200
-    expect(wordIndexAt(sched, 599)).toBe(2);
+    expect(wordIndexAt(sched, PLAIN - 0.1)).toBe(0);
+    expect(wordIndexAt(sched, PLAIN + 0.1)).toBe(1);
+    expect(wordIndexAt(sched, 3 * PLAIN - 1)).toBe(2);
   });
 
   it("clamps before the start and past the end", () => {
@@ -262,7 +271,7 @@ describe("schedule / wordIndexAt", () => {
     const tail = schedule(tokens, WPM, 2);
     expect(tail.offset).toBe(2);
     expect(wordIndexAt(tail, 0)).toBe(2);
-    expect(wordIndexAt(tail, 200)).toBe(3);
+    expect(wordIndexAt(tail, PLAIN + 0.1)).toBe(3);
   });
 
   it("throws on out-of-range fromIndex", () => {
@@ -279,13 +288,47 @@ describe("schedule / wordIndexAt", () => {
   });
 });
 
+describe("the wpm on screen is the real average", () => {
+  // Prose with commas, sentence ends, a long word, a number and two paragraph
+  // ends: the case where pauses used to drag real speed below the setting.
+  const prose = tokenizeParagraphs([
+    "It was, in 1865, an extraordinarily quiet morning. Nobody spoke; nobody moved.",
+    "Then the bell rang, twice, and everyone looked up at once!",
+  ]);
+
+  it.each([300, 500, 800])("averages 60000/wpm per word at %i WPM", (wpm) => {
+    const s = schedule(prose, wpm);
+    expect(totalDuration(s) / prose.length).toBeCloseTo(60000 / wpm, 6);
+  });
+
+  it("keeps pauses in proportion to a plain word", () => {
+    const d = durations(schedule(prose, WPM));
+    const plain = d[prose.findIndex((t) => t.word === "It")];
+    const at = (word: string) => d[prose.findIndex((t) => t.word === word)];
+    expect(at("was,") / plain).toBeCloseTo(PACING.CLAUSE_PAUSE);
+    expect(at("morning.") / plain).toBeCloseTo(PACING.SENTENCE_PAUSE);
+    expect(at("moved.") / plain).toBeCloseTo(PACING.PARAGRAPH_PAUSE);
+  });
+
+  it("keeps the same pace when rescheduled mid-chapter", () => {
+    // The tail after "moved." is lighter on pauses than the whole chapter, so
+    // scaling by the tail alone would change every word's duration.
+    const from = prose.findIndex((t) => t.word === "Then");
+    const whole = durations(schedule(prose, WPM));
+    const tail = durations(schedule(prose, WPM, from));
+    tail.forEach((ms, i) => expect(ms).toBeCloseTo(whole[from + i]));
+  });
+});
+
 describe("mid-stream WPM change (reschedule from current word, D19)", () => {
   it("restarts the current word at t=0 under the new speed — no skips", () => {
+    // 4 plain words and a paragraph end (2.8x): a plain word lasts
+    // 5 * (60000 / wpm) / 6.8 ms, which is 147ms at 300 WPM and 74ms at 600.
     const tokens = tokenizeParagraphs(["alpha beta gamma delta epsilon"]);
     const before = schedule(tokens, 300);
 
-    // Fake clock: we are 450ms in — word index 2 ("gamma") is visible.
-    const visibleBefore = wordIndexAt(before, 450);
+    // Fake clock: we are 350ms in — word index 2 ("gamma") is visible.
+    const visibleBefore = wordIndexAt(before, 350);
     expect(visibleBefore).toBe(2);
 
     // User drags the slider to 600 WPM. Overlay reschedules and resets clock.
@@ -293,8 +336,9 @@ describe("mid-stream WPM change (reschedule from current word, D19)", () => {
     expect(after.offset).toBe(2);
     expect(wordIndexAt(after, 0)).toBe(2); // same word, not skipped
 
-    // New cadence applies from here: 100ms per plain word at 600 WPM.
-    expect(wordIndexAt(after, 100)).toBe(3);
+    // New cadence applies from here: about 74ms per plain word at 600 WPM.
+    expect(wordIndexAt(after, 70)).toBe(2);
+    expect(wordIndexAt(after, 80)).toBe(3);
   });
 
   it("rescheduling at the final word leaves a finishable schedule", () => {
@@ -306,7 +350,7 @@ describe("mid-stream WPM change (reschedule from current word, D19)", () => {
 
   it("simulated rAF loop never moves backwards across a WPM change", () => {
     const tokens = tokenizeParagraphs(["w1 w2 w3 w4 w5 w6 w7 w8"]);
-    let sched = schedule(tokens, 240); // 250ms per plain word
+    let sched = schedule(tokens, 240); // 250ms average per word
     let clockStart = 0;
     let lastVisible = -1;
 

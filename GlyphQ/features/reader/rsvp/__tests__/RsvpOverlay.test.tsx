@@ -17,8 +17,9 @@ const colors = {
   border: "#ddd",
 };
 
-// "alpha beta gamma delta" at 300 WPM => 200ms per plain word.
-// "delta" is the paragraph end (2.8x). cumEnd ≈ [200, 400, 600, 1160].
+// "alpha beta gamma delta" at 300 WPM averages 200ms a word: 800ms in all.
+// "delta" is the paragraph end and holds 2.8x as long as a plain word, so a
+// plain word lasts 800 / 5.8 ≈ 138ms. cumEnd ≈ [138, 276, 414, 800].
 const tokens = tokenizeParagraphs(["alpha beta gamma delta"]);
 
 let clock = 0;
@@ -87,15 +88,15 @@ describe("RsvpOverlay", () => {
     press(r, "rsvp-playpause"); // start playing from index 0
     expect(word(r)).toBe("alpha");
 
-    clock = 210; // past word 0's 200ms end
+    clock = 140; // past word 0's 138ms end
     flushFrame();
     expect(word(r)).toBe("beta");
 
-    clock = 410; // past word 1
+    clock = 280; // past word 1
     flushFrame();
     expect(word(r)).toBe("gamma");
 
-    clock = 610; // past word 2
+    clock = 420; // past word 2
     flushFrame();
     expect(word(r)).toBe("delta");
   });
@@ -131,7 +132,7 @@ describe("RsvpOverlay", () => {
     });
 
     press(r, "rsvp-playpause");
-    clock = 410;
+    clock = 300;
     flushFrame(); // now on "gamma" (index 2)
     press(r, "rsvp-close");
 
@@ -154,7 +155,7 @@ describe("RsvpOverlay", () => {
     });
 
     press(r, "rsvp-playpause");
-    clock = 1200; // past "delta"'s paragraph-end pause (cumEnd ≈ 1160)
+    clock = 810; // past "delta"'s paragraph-end pause (cumEnd = 800)
     flushFrame();
     expect(onFinish).toHaveBeenCalledTimes(1);
 

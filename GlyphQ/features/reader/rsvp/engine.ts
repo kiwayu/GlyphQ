@@ -4,8 +4,9 @@
  * Timeline model (eng review 7A + D19):
  *
  *   tokens:     [ w0 ][ w1 ][ w2 ][ w3 ] ...
- *   durations:  [ d0 ][ d1 ][ d2 ][ d3 ]      durationFor(token, wpm)
- *   cumEnd:     [ d0 ][d0+d1][d0+d1+d2] ...   buildSchedule(durations)
+ *   durations:  [ d0 ][ d1 ][ d2 ][ d3 ]      durationFor(token, wpm),
+ *                                             scaled so their mean is 60000/wpm
+ *   cumEnd:     [ d0 ][d0+d1][d0+d1+d2] ...   schedule(tokens, wpm)
  *
  *   The overlay runs a requestAnimationFrame loop:
  *     visible word = offset + wordIndexAt(cumEnd, now - clockStart)
@@ -176,7 +177,10 @@ function visibleLength(word: string): number {
   return word.replace(TRAILING_PUNCT, "").length;
 }
 
-/** Display duration in ms for one token at the given WPM. */
+/**
+ * Display duration in ms for one token at the given WPM, before schedule()
+ * scales the chapter so its average word lasts 60000/wpm.
+ */
 export function durationFor(token: Token, wpm: number): number {
   if (wpm <= 0) throw new RangeError(`wpm must be positive, got ${wpm}`);
   const base = 60000 / wpm;
@@ -199,7 +203,15 @@ export function durationFor(token: Token, wpm: number): number {
 
 /* ── Scheduling ─────────────────────────────────────────────────── */
 
-/** Schedule for tokens[fromIndex..] at the given WPM; t=0 = fromIndex. */
+/**
+ * Schedule for tokens[fromIndex..] at the given WPM; t=0 = fromIndex.
+ *
+ * Every duration is scaled so the average word across the whole token list
+ * lasts exactly 60000/wpm (the Spritz patent's normalisation). Pauses keep
+ * their ratios, and the wpm on screen is the real throughput. The scale comes
+ * from the whole list, not the slice from fromIndex, so rescheduling
+ * mid-chapter keeps the same pace.
+ */
 export function schedule(
   tokens: Token[],
   wpm: number,
@@ -210,10 +222,13 @@ export function schedule(
       `fromIndex ${fromIndex} out of range 0..${tokens.length}`
     );
   }
+  const raw = tokens.map((t) => durationFor(t, wpm));
+  const rawTotal = raw.reduce((a, b) => a + b, 0);
+  const scale = (tokens.length * 60000) / wpm / rawTotal;
   const cumEnd: number[] = [];
   let acc = 0;
   for (let i = fromIndex; i < tokens.length; i++) {
-    acc += durationFor(tokens[i], wpm);
+    acc += raw[i] * scale;
     cumEnd.push(acc);
   }
   return { offset: fromIndex, cumEnd };

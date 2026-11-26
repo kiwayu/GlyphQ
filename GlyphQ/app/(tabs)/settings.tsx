@@ -1,3 +1,4 @@
+import { READER_FONT_NAMES } from "@/features/reader/readerPrefs";
 import { useState, useEffect, useCallback } from "react";
 import {
   View,
@@ -47,16 +48,9 @@ const THEME_LABELS: Record<string, string> = {
   night: "Night",
 };
 
-const FONT_OPTIONS = [
-  "Georgia",
-  "System",
-  "Palatino",
-  "Bookerly",
-  "Lora",
-  "Times New Roman",
-  "Helvetica",
-  "Courier",
-];
+/* Only fonts the reader can actually show. This list used to offer five the
+   reader did not have; choosing one silently gave Georgia. */
+const FONT_OPTIONS = READER_FONT_NAMES;
 
 /* ── Section wrapper ─────────────────────────────────── */
 

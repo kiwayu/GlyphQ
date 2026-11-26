@@ -28,6 +28,8 @@ const FONT_NAMES: Record<ReaderFont, string> = {
   charter: "Charter",
   system: "System",
 };
+/** The fonts the reader can show, as the Settings screen names them. */
+export const READER_FONT_NAMES: string[] = FONT_IDS.map((id) => FONT_NAMES[id]);
 
 /** Saved appearance as reader settings. Pure, so it can be tested. */
 export function toReaderSettings(

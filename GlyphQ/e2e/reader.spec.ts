@@ -71,6 +71,28 @@ async function firstWordOnScreen(page: Page): Promise<string> {
   });
 }
 
+/** Whether a given numbered word's box is inside the page currently on screen. */
+async function wordIsOnScreen(page: Page, word: string): Promise<boolean> {
+  const { reader } = await frames(page);
+  return reader.evaluate((w) => {
+    const frame = document.querySelector("#viewer iframe") as HTMLIFrameElement;
+    const doc = frame.contentDocument!;
+    const box = frame.getBoundingClientRect();
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = (node.nodeValue ?? "").search(new RegExp(`\\b${w}\\b`));
+      if (at < 0) continue;
+      const range = doc.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + w.length);
+      const r = range.getBoundingClientRect();
+      const x = r.left + box.left;
+      return x >= 0 && x + r.width <= window.innerWidth;
+    }
+    return false;
+  }, word);
+}
+
 const tapCentre = (page: Page) => page.mouse.click(viewport.width / 2, viewport.height / 2);
 const tapRight = (page: Page) => page.mouse.click(viewport.width - 30, viewport.height / 2);
 const focusWord = async (page: Page) =>
@@ -94,6 +116,7 @@ test("a page turn moves on, and the book reopens where it was left", async ({ pa
 });
 
 test("speed reading starts on the page being read, changes speed, and exits on the word it stopped at", async ({ page }) => {
+  test.setTimeout(90_000);
   await openSample(page);
   await tapRight(page);
   await expect.poll(() => firstWordOnScreen(page)).not.toBe("c1p1w1");
@@ -112,8 +135,8 @@ test("speed reading starts on the page being read, changes speed, and exits on t
   await page.getByTestId("rsvp-playpause").click();
   const startN = Number(pageStart.split("w")[1]);
   await expect
-    .poll(async () => Number((await focusWord(page)).split("w")[1] ?? 0), { timeout: 30_000 })
-    .toBeGreaterThan(startN + 90);
+    .poll(async () => Number((await focusWord(page)).split("w")[1] ?? 0), { timeout: 45_000 })
+    .toBeGreaterThan(startN + 160); // well past one page in any font
   await page.getByTestId("rsvp-playpause").click();
   const stopped = await focusWord(page);
   await page.getByTestId("rsvp-close").click();
@@ -121,10 +144,8 @@ test("speed reading starts on the page being read, changes speed, and exits on t
   // The page is now the one holding that word, and the word is marked.
   const { book } = await frames(page);
   await expect(book.locator("#bb-flash")).toHaveAttribute("data-word", new RegExp(`^${stopped}[.,]?$`));
-  const onScreen = Number((await firstWordOnScreen(page)).split("w")[1]);
-  const stoppedN = Number(stopped.split("w")[1]);
-  expect(onScreen).toBeLessThanOrEqual(stoppedN);
-  expect(stoppedN - onScreen).toBeLessThan(90); // same page, not just same chapter
+  expect(await wordIsOnScreen(page, stopped)).toBe(true);
+  expect(await wordIsOnScreen(page, pageStart)).toBe(false); // it really did turn the page
 
   // Going back in resumes on that word, with no question asked first.
   await tapCentre(page);

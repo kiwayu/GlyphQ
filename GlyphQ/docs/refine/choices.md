@@ -62,5 +62,6 @@ Recommendation: **B**. It removes a tab that is a dead end when no book is open 
 | Word-frequency timing in speed reading | A word-frequency list bundled in the app | Worth trying; frequency effects on reading time are well established. |
 | Volume keys change speed (Reedy does this) | A native module | Later. |
 | Highlighting with notes | A selection mode in the reader | Yes, see 4. |
+| A slide animation on page turn | A turn queue inside the reader page, and a phone to judge it on | Not now. The cheap version (CSS smooth scrolling) was prototyped and left pages misaligned after two quick taps. Apple's guidance is to avoid motion on interactions that happen constantly. Apple Books, Kobo and Moon+ all offer it as an option, so it is a fair thing to want later. |
 | PDF support | A PDF renderer | Only if you read PDFs; import already says "PDF support lands later". |
 | An emulator or device run of this work | A phone with USB debugging, or enabling Windows Hypervisor Platform | **Do this first.** Everything here was measured in Chromium. |

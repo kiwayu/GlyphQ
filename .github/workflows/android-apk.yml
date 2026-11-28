@@ -1,0 +1,112 @@
+name: Android APK
+
+# Builds an installable APK, launches it on an emulator, and publishes it to
+# the "android-latest" release so a phone can download it from one fixed link.
+# Pull requests that touch the build get the build and the launch check only.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "GlyphQ/**"
+      - ".github/workflows/android-apk.yml"
+  pull_request:
+    paths:
+      - "GlyphQ/app.json"
+      - "GlyphQ/package.json"
+      - "GlyphQ/package-lock.json"
+      - "GlyphQ/scripts/android-smoke.sh"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: GlyphQ
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: GlyphQ/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      # arm64 covers phones; x86_64 lets the emulator below run the same file.
+      - name: Build release APK
+        working-directory: GlyphQ/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+      - name: Check the APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/GlyphQ.apk"
+          build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$build_tools/aapt" dump badging "$RUNNER_TEMP/GlyphQ.apk" | grep -E "^package:|native-code"
+          "$build_tools/apksigner" verify --print-certs "$RUNNER_TEMP/GlyphQ.apk" | grep -E "SHA-256"
+          ls -lh "$RUNNER_TEMP/GlyphQ.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlyphQ-apk
+          path: ${{ runner.temp }}/GlyphQ.apk
+          retention-days: 14
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: GlyphQ-apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash GlyphQ/scripts/android-smoke.sh GlyphQ.apk smoke-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-smoke
+          path: smoke-out
+          retention-days: 14
+
+  publish:
+    needs: [build, smoke]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GlyphQ-apk
+      - name: Replace the android-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete android-latest --cleanup-tag --yes || true
+          gh release create android-latest GlyphQ.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Android build of main" \
+            --notes "Built from ${GITHUB_SHA::7}. Open this page on the phone, download GlyphQ.apk and tap it to install. It replaces an earlier install and keeps your books."

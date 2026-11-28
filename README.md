@@ -56,6 +56,16 @@ A React Native app for reading your own books and keeping track of where you are
 - **ESLint** (9.25.0) - Code quality and consistency
 - **Expo CLI** - Development server and build tools
 
+## Install on Android
+
+1. On the phone, open
+   <https://github.com/kiwayu/GlyphQ/releases/download/android-latest/GlyphQ.apk>.
+2. Open the downloaded file. The first time, Android asks you to allow your
+   browser to install apps; allow it and tap Install.
+
+The file is rebuilt from `main` on every change. Installing a newer one replaces
+the app and keeps your books.
+
 ## Getting Started
 
 ### Prerequisites
